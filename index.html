@@ -228,6 +228,13 @@ a.btn{text-decoration:none}
 .doc-meta span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
 .doc-empty{border:1px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:14px}
 @media (max-width:820px){.docs{grid-template-columns:1fr}}
+/* Änderungsverlauf (standardmäßig zugeklappt) */
+.act-h{width:100%;background:none;border:0;border-bottom:1px solid var(--line);cursor:pointer;text-align:left;color:var(--text);font:inherit;gap:12px}
+.act-panel.closed .act-h{border-bottom:0}
+.act-panel.closed > :not(.act-h){display:none}
+.act-h h2{white-space:nowrap;flex:none}
+.act-last{margin-left:auto;flex:1;min-width:0;text-align:right;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act-h .chev{color:var(--muted);font-size:14px}
 /* Reparaturen */
 .rep-list .rep{align-items:flex-start}
 .chk{width:28px;height:28px;border-radius:8px;border:2px solid var(--muted);background:none;color:transparent;display:grid;place-items:center;cursor:pointer;flex:none;margin-top:1px;font-weight:700}
@@ -825,9 +832,11 @@ const fullTime = iso => iso ? new Date(iso).toLocaleString('de-DE', {day: '2-dig
 const byLine = x => { const who = x.by || x.updatedBy, at = x.byAt || x.updatedAt; return who ? `<div class="by" title="${fullTime(at)}">✎ ${esc(who)} · ${relTime(at)}</div>` : ''; };
 const PCOL = ['#3A93FF', '#F2A93B', '#3DBE8B', '#E05FB0', '#8B6CF0', '#E5303A'];
 const pColor = n => { let x = 0; for (const c of String(n || '')) x = (x * 31 + c.charCodeAt(0)) >>> 0; return PCOL[x % PCOL.length]; };
+document.addEventListener('click', e => { if (!e.target.closest('[data-acttoggle]')) return; S.actOpen = !S.actOpen; render(); });
 function activityHTML() {
   const a = S.activity.slice(0, 15);
-  return `<section class="panel"><div class="panel-h"><h2>Neueste Änderungen</h2></div>
+  const open = !!S.actOpen, last = S.activity[0];
+  return `<section class="panel act-panel${open ? '' : ' closed'}"><button type="button" class="panel-h act-h" data-acttoggle aria-expanded="${open}"><h2>Neueste Änderungen</h2><span class="act-last">${last ? 'zuletzt ' + esc(last.person || '') + ' · ' + relTime(last.at) : ''}</span><span class="chev" aria-hidden="true">${open ? '▴' : '▾'}</span></button>
     ${a.length ? `<ul class="list act">${a.map(x => `<li${x.collection === 'vehicles' && S.vehicles.some(v => v.id === x.item_id) ? ` data-open="${esc(x.item_id)}" style="cursor:pointer"` : ''}>
       <span class="avatar" style="--c:${pColor(x.person)}">${esc((x.person || '?').slice(0, 1).toUpperCase())}</span>
       <div class="grow"><span class="who">${esc(x.person || 'Unbekannt')}</span> ${esc(x.text)}</div><span class="t" title="${fullTime(x.at)}">${relTime(x.at)}</span></li>`).join('')}</ul>`
