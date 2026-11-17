@@ -220,7 +220,7 @@ a.btn{text-decoration:none}
 .doc-h .btn{margin-left:auto}
 .doc-list{display:grid;gap:8px}
 .doc{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:6px;background:var(--surface-2)}
-.doc-prev{flex:none;width:56px;height:56px;border-radius:7px;overflow:hidden;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);color:var(--red);text-decoration:none}
+.doc-prev{flex:none;padding:0;cursor:zoom-in;width:56px;height:56px;border-radius:7px;overflow:hidden;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);color:var(--red);text-decoration:none}
 .doc-prev img{width:100%;height:100%;object-fit:cover;display:block}
 .pdf{display:grid;place-items:center;gap:0}
 .pdf svg{width:24px;height:24px}
@@ -609,7 +609,8 @@ function pumpUrls() {
   }
 }
 let rT = null; function scheduleRender() { clearTimeout(rT); rT = setTimeout(() => { render(); if ($('#lb').open) drawLightbox(); }, 120); }
-const driveView = id => `https://drive.google.com/file/d/${id}/view`;
+// authuser wählt direkt das SG-Konto aus – keine Kontoauswahl, wenn mehrere Google-Konten angemeldet sind
+const driveView = id => `https://drive.google.com/file/d/${id}/view?authuser=${encodeURIComponent(lsGet('sg-email') || GOOGLE_ACCOUNT)}`;
 
 /* ---------- Daten & Synchronisierung ---------- */
 const LS_DATA = 'sg-data';
@@ -1115,7 +1116,8 @@ function docsHTML(v) {
     return `<div class="doc-slot"><div class="doc-h"><b>${DOC_SHORT[typ]}</b><span class="sub">${typ === 'brief' ? 'Teil II' : 'Teil I'}</span>
       ${can && !IN_WV ? `<label class="btn small">${ICON.plus}PDF / Foto<input type="file" accept="image/*,application/pdf,.pdf" multiple class="file-ov" aria-label="${DOC_SHORT[typ]} hochladen" data-docup="${v.id}" data-typ="${typ}"></label>` : ''}</div>
       ${list.length || up ? `<div class="doc-list">${list.map((d, i) => `<div class="doc">
-        <a class="doc-prev" href="${driveView(d.id)}" target="_blank" rel="noopener" aria-label="${DOC_SHORT[typ]} ${i + 1} öffnen">${d.pdf ? `<span class="pdf">${PDF_ICON}<b>PDF</b></span>` : imgTag(d.id, DOC_SHORT[typ] + ' Seite ' + (i + 1))}</a>
+        ${d.pdf ? `<a class="doc-prev" href="${driveView(d.id)}" target="_blank" rel="noopener" aria-label="${DOC_SHORT[typ]} ${i + 1} öffnen"><span class="pdf">${PDF_ICON}<b>PDF</b></span></a>`
+          : `<button type="button" class="doc-prev" data-docview="${v.id}" data-typ="${typ}" data-doc="${d.id}" aria-label="${DOC_SHORT[typ]} ${i + 1} ansehen">${imgTag(d.id, DOC_SHORT[typ] + ' Seite ' + (i + 1))}</button>`}
         <div class="doc-meta"><span>${esc(d.name || (d.pdf ? 'PDF' : 'Seite ' + (i + 1)))}</span>${d.by ? `<span class="sub">${esc(d.by)} · ${relTime(d.byAt)}</span>` : ''}</div>
         ${can ? `<button class="btn small ghost" data-act="del-doc" data-id="${v.id}" data-doc="${d.id}" aria-label="Dokument löschen">✕</button>` : ''}</div>`).join('')}
         ${up ? `<div class="uploading" style="aspect-ratio:auto;padding:12px">Lade ${up} Datei${up === 1 ? '' : 'en'} hoch …</div>` : ''}</div>`
@@ -1224,21 +1226,28 @@ async function uploadImages(vid, files) {
 }
 
 function openLightbox(vid, i) {
-  S.lbCar = vid; S.lbIndex = i; drawLightbox();
+  S.lbCar = vid; S.lbIndex = i; S.lbDocs = null; drawLightbox();
   const lb = $('#lb'); if (!lb.open) lb.showModal();
 }
 function drawLightbox() {
   const v = S.vehicles.find(x => x.id === S.lbCar), lb = $('#lb');
-  const list = v ? imgs(v) : [];
+  const list = v ? (S.lbDocs ? docsOf(v, S.lbDocs).filter(d => !d.pdf) : imgs(v)) : [];
   if (!list.length) { if (lb.open) lb.close(); return; }
   S.lbIndex = (S.lbIndex + list.length) % list.length;
-  const b = list[S.lbIndex], can = S.canWrite;
-  lb.innerHTML = `<div class="dlg-h"><h2>${esc(vName(v))} <span style="color:#8B9AB0;font-size:15px;font-weight:500">${S.lbIndex + 1} / ${list.length}</span></h2><button type="button" class="btn small ghost" data-lb="close" aria-label="Schließen">✕</button></div>
+  const b = list[S.lbIndex], can = S.canWrite && !S.lbDocs;
+  lb.innerHTML = `<div class="dlg-h"><h2>${esc(vName(v))}${S.lbDocs ? ' · ' + DOC_SHORT[S.lbDocs] : ''} <span style="color:#8B9AB0;font-size:15px;font-weight:500">${S.lbIndex + 1} / ${list.length}</span></h2><button type="button" class="btn small ghost" data-lb="close" aria-label="Schließen">✕</button></div>
     <div class="lb-img"><img src="${blob(b.id)}" alt="${esc(vName(v))}" onerror="this.classList.add('broken')">
     ${list.length > 1 ? `<button class="lb-nav lb-prev" data-lb="prev" aria-label="Vorheriges Bild">${ICON.left}</button><button class="lb-nav lb-next" data-lb="next" aria-label="Nächstes Bild">${ICON.right}</button>` : ''}</div>
     <div class="dlg-f"><div>${can ? `<button class="btn danger small" data-lb="del">Bild löschen</button>` : ''}</div>
-    <div class="actions">${can && S.lbIndex > 0 ? `<button class="btn small" data-lb="cover">Als Titelbild</button>` : ''}<a class="btn small" href="${driveView(b.id)}" target="_blank" rel="noopener">Original öffnen</a></div></div>`;
+    <div class="actions">${can && S.lbIndex > 0 ? `<button class="btn small" data-lb="cover">Als Titelbild</button>` : ''}${urlCache[b.id] ? `<a class="btn small" href="${urlCache[b.id]}" download="${esc(cleanName((S.lbDocs ? DOC_SHORT[S.lbDocs] : vName(v)) + ' ' + (S.lbIndex + 1)))}.jpg">Speichern</a>` : ''}<a class="btn small" href="${driveView(b.id)}" target="_blank" rel="noopener">In Drive öffnen</a></div></div>`;
 }
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-docview]'); if (!t) return;
+  const v = S.vehicles.find(x => x.id === t.dataset.docview); if (!v) return;
+  const list = docsOf(v, t.dataset.typ).filter(d => !d.pdf);
+  S.lbCar = v.id; S.lbDocs = t.dataset.typ; S.lbIndex = Math.max(0, list.findIndex(d => d.id === t.dataset.doc));
+  drawLightbox(); const lb = $('#lb'); if (!lb.open) lb.showModal();
+});
 $('#lb').addEventListener('click', async e => {
   const t = e.target.closest('[data-lb]');
   if (!t) { if (e.target.id === 'lb') $('#lb').close(); return; }
@@ -1558,6 +1567,7 @@ function openForm({title, groups, data = {}, onSave, onDelete, extra = '', after
   const del = form.querySelector('[data-del]');
   if (del) del.onclick = async () => { dlg.close(); if (await confirmBox('Wirklich löschen?')) onDelete(); };
   dlg.showModal();
+  if (form.querySelector('.rng')) refreshRanges(); // vorhandene Zeiträume sofort anzeigen
   const first = form.querySelector('input,select,textarea'); if (first && window.innerWidth > 820) first.focus();
 }
 function confirmBox(text, body, yes) {
