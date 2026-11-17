@@ -176,12 +176,13 @@ img.broken{opacity:0}
 .namepick{display:flex;gap:8px;flex-wrap:wrap}
 @media (max-width:820px){.brand .sync{display:none}.userchip{max-width:120px}}
 /* Teile */
-.partrow{display:grid;grid-template-columns:1.2fr 1.6fr 100px 36px;gap:6px;align-items:center;margin-bottom:6px}
+.partrow{display:grid;grid-template-columns:1.2fr 1.4fr 64px 90px 108px 36px;grid-template-areas:'n l m p mo d';gap:6px;align-items:center;margin-bottom:6px}
+.p-name{grid-area:n}.p-link{grid-area:l}.p-menge{grid-area:m}.p-preis{grid-area:p}.p-modus{grid-area:mo;padding:7px 6px!important}.p-del{grid-area:d}
 .partrow input{padding:7px 9px}
 .parts .actions{grid-column:1/-1;align-items:center}
 .parts{grid-template-columns:1fr!important}
 .parts-list{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px;margin-top:4px}
-@media (max-width:820px){.partrow{grid-template-columns:1fr 90px 36px;padding-bottom:6px;border-bottom:1px solid var(--line)}.partrow .p-link{grid-column:1/-1;grid-row:2}}
+@media (max-width:820px){.partrow{grid-template-columns:64px 1fr 1.2fr 36px;grid-template-areas:'n n n d' 'l l l l' 'm p mo mo';padding-bottom:8px;border-bottom:1px solid var(--line)}}
 /* Zeitraum-Auswahl */
 .rng{grid-column:1/-1;display:grid;gap:6px}
 .rng-l{font-size:14px;color:var(--muted);font-weight:500}
@@ -311,7 +312,8 @@ tfoot td{font-weight:700;border-top:2px solid var(--line)}
 .bar.ver{background:var(--st-verkauf);color:#1a1205}
 .bar.auf{background:#13B5A6;color:#04211e}
 .mark{position:absolute;top:50%;width:13px;height:13px;transform:translate(-50%,-50%) rotate(45deg);border:2px solid var(--surface);z-index:1}
-.mark.kauf{background:var(--text)} .mark.sold{background:var(--st-verkauft)}
+.mark.kauf{background:var(--text)} .mark.sold{background:var(--st-verkauft)} .mark.hu{background:var(--red)} .mark.rp{background:var(--st-reparatur);border-radius:50%;width:10px;height:10px;transform:translate(-50%,-50%)}
+.plan-h .seg + .seg{margin-left:4px;padding-left:10px;border-left:1px solid var(--line)}
 .today{position:absolute;top:0;bottom:0;width:2px;background:var(--red);z-index:3;pointer-events:none}
 .today::after{content:"Heute";position:absolute;top:-2px;left:4px;font-size:11px;font-weight:700;color:var(--red)}
 .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted);padding:12px 18px;border-top:1px solid var(--line)}
@@ -916,6 +918,7 @@ function render() {
   else h += ({uebersicht:renderHome, fahrzeuge:renderCars, planung:renderPlan, finanzen:renderFin, werkzeug:renderTools}[S.view] || renderHome)();
   app.innerHTML = h;
   app.querySelectorAll('[data-needs-write]').forEach(b => { if (!S.canWrite) b.disabled = true; });
+  bindUploads();
   const g = document.getElementById('gantt');
   if (g && prevGantt != null && S.ganttScroll && S.ganttScroll.key === S.ganttScrolledKey) g.scrollLeft = prevGantt;
   if (g && S.ganttScroll && S.ganttScroll.key !== S.ganttScrolledKey) {
@@ -1132,7 +1135,7 @@ async function uploadDocs(vid, typ, files) {
       const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
       let b = f, type = 'application/pdf';
       if (!pdf) { b = await shrinkDoc(f); type = /^image\/(jpeg|png|webp)$/.test(b.type) ? b.type : 'image/jpeg'; }
-      const cv = S.vehicles.find(x => x.id === vid) || {}, k = docsOf(cv, typ).length + added.length + 1;
+      const cv = S.vehicles.find(x => x.id === vid) || {}, sk = vid + ':' + typ; S.seq = S.seq || {}; const k = S.seq[sk] = Math.max(S.seq[sk] || 0, docsOf(cv, typ).length) + 1;
       const r = await S.assets.upload(b, {type, vid, name: DOC_SHORT[typ] + (k > 1 ? ' ' + k : '')});
       added.push({id: r.id, typ, pdf, name: DOC_SHORT[typ] + (k > 1 ? ' ' + k : ''), at: new Date().toISOString()});
     } catch (e) {
@@ -1158,10 +1161,12 @@ async function shrinkDoc(file) {
     return (await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9))) || file;
   } catch (e) { return file; }
 }
-document.addEventListener('change', e => {
-  const inp = e.target.closest('[data-docup]'); if (!inp) return;
-  uploadDocs(inp.dataset.docup, inp.dataset.typ, inp.files); inp.value = '';
-});
+/* Dateiauswahl direkt am Eingabefeld binden: so kommt die Auswahl auch dann an,
+   wenn die Seite neu gezeichnet wurde, während die Auswahl am Handy offen war. */
+function bindUploads() {
+  document.querySelectorAll('#app input[data-upload]').forEach(i => { i.onchange = () => { const f = [...i.files]; i.value = ''; if (f.length) uploadImages(i.dataset.upload, f); }; });
+  document.querySelectorAll('#app input[data-docup]').forEach(i => { i.onchange = () => { const f = [...i.files]; i.value = ''; if (f.length) uploadDocs(i.dataset.docup, i.dataset.typ, f); }; });
+}
 
 function galleryHTML(v) {
   const list = imgs(v), up = S.uploading[v.id] || 0;
@@ -1200,7 +1205,7 @@ async function uploadImages(vid, files) {
     try {
       const b = await shrink(f);
       const type = /^image\/(jpeg|png|webp|gif)$/.test(b.type) ? b.type : 'image/jpeg';
-      const cv = S.vehicles.find(x => x.id === vid) || {}, n = imgs(cv).length + added.length + 1;
+      const cv = S.vehicles.find(x => x.id === vid) || {}; S.seq = S.seq || {}; const n = S.seq[vid] = Math.max(S.seq[vid] || 0, imgs(cv).length) + 1;
       const r = await S.assets.upload(b, {type, vid, name: 'Bild ' + String(n).padStart(2, '0')});
       added.push({id: r.id, at: new Date().toISOString()});
     } catch (e) {
@@ -1265,11 +1270,15 @@ document.addEventListener('keydown', e => {
 let tx = null;
 $('#lb').addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, {passive: true});
 $('#lb').addEventListener('touchend', e => { if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; tx = null; if (Math.abs(dx) > 50) { S.lbIndex += dx < 0 ? 1 : -1; drawLightbox(); } });
-document.addEventListener('change', e => {
-  const inp = e.target.closest('[data-upload]'); if (!inp) return;
-  const files = inp.files; uploadImages(inp.dataset.upload, files);
-});
 
+const lsGet0 = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-plantog]'); if (!t) return;
+  const k = t.dataset.plantog === 'sold' ? 'sg-plan-sold' : 'sg-plan-own';
+  const on = t.getAttribute('aria-pressed') === 'true';
+  try { localStorage.setItem(k, on ? '0' : '1'); } catch (x) {}
+  render();
+});
 function renderPlan() {
   const narrow = window.innerWidth < 820;
   if (!S.planZoom) S.planZoom = narrow ? 'detail' : 'kompakt';
@@ -1287,7 +1296,17 @@ function renderPlan() {
   const monthList = []; for (let i = 0; i < months; i++) monthList.push(new Date(start.getFullYear(), start.getMonth() + i, 1));
   const mw = monthList.map(m => (new Date(m.getFullYear(), m.getMonth() + 1, 1) - m) / span * 100);
   const label = `${monthList[0].toLocaleDateString('de-DE', {month:'short', year:'numeric'})} – ${monthList[months - 1].toLocaleDateString('de-DE', {month:'short', year:'numeric'})}`;
-  const rows = tradeCars().filter(v => inRange(v.kaufdatum) || inRange(v.reparaturStart, v.reparaturEnde) || inRange(v.aufbereitungStart, v.aufbereitungEnde) || inRange(v.verkaufStart, v.verkaufEnde) || inRange(v.verkaufsdatum))
+  const showSold = lsGet0('sg-plan-sold') === '1', showOwn = lsGet0('sg-plan-own') !== '0';
+  const huIso = v => { if (!v.hu) return ''; const [y, m] = v.hu.split('-').map(Number); return y && m ? iso(new Date(y, m, 0)) : ''; };
+  const repDates = v => reps(v).filter(r => r.datum && !r.entfallen).map(r => r.datum);
+  const hidden = {sold: 0, own: 0};
+  const rows = S.vehicles.filter(v => {
+    const any = inRange(v.kaufdatum) || inRange(v.reparaturStart, v.reparaturEnde) || inRange(v.aufbereitungStart, v.aufbereitungEnde) || inRange(v.verkaufStart, v.verkaufEnde) || inRange(v.verkaufsdatum) || inRange(huIso(v)) || repDates(v).some(d => inRange(d));
+    if (!any) return false;
+    if (isOwn(v) && !showOwn) { hidden.own++; return false; }
+    if (!isOwn(v) && v.status === 'verkauft' && !showSold) { hidden.sold++; return false; }
+    return true;
+  })
     .sort((a, b) => (a.kaufdatum || a.reparaturStart || '9').localeCompare(b.kaufdatum || b.reparaturStart || '9'));
   const tp = (now - start) / span * 100;
   // Wochen (Montage) für Detailansicht
@@ -1312,6 +1331,7 @@ function renderPlan() {
   let h = head('Planung', 'Kauf, Reparatur, Aufbereitung und Verkauf aller Fahrzeuge', addBtn('new-car', 'Fahrzeug planen'));
   h += `<section class="panel"><div class="panel-h plan-h"><div class="seg" role="group" aria-label="Ansicht">
       <button class="chip" data-zoom="kompakt" aria-pressed="${!detail}">Monate</button><button class="chip" data-zoom="detail" aria-pressed="${detail}">Wochen</button></div>
+      <div class="seg" role="group" aria-label="Anzeigen"><button class="chip" data-plantog="sold" aria-pressed="${showSold}">Verkaufte${hidden.sold ? ' (' + hidden.sold + ')' : ''}</button><button class="chip" data-plantog="own" aria-pressed="${showOwn}">Eigene${hidden.own ? ' (' + hidden.own + ')' : ''}</button></div>
       <div class="gantt-nav"><button class="btn small" data-gantt="-1" aria-label="Zurück">${ICON.left}</button><b>${label}</b>
       <button class="btn small" data-gantt="1" aria-label="Weiter">${ICON.right}</button>
       ${S.ganttOffset ? `<button class="btn small ghost" data-gantt="0">Heute</button>` : ''}</div></div>
@@ -1320,11 +1340,11 @@ function renderPlan() {
         <div class="g-months">${monthList.map((m, i) => `<div class="g-month" style="width:${mw[i]}%">${m.toLocaleDateString('de-DE', {month:'long'})}${detail ? ' ' + m.getFullYear() : ''}</div>`).join('')}</div>
         ${detail ? `<div class="g-weeks">${weeks.map(w => `<span style="left:${pct(w)}%">KW ${kw(w)}<small>${w.getDate()}.${w.getMonth() + 1}.</small></span>`).join('')}</div>` : ''}
         ${today}</div></div>
-      ${rows.length ? rows.map(v => `<div class="g-row"><div class="g-label" data-open="${v.id}"><b>${esc(vName(v))}</b><span>${(STATUS[v.status] || STATUS.geplant).label}</span></div>
-        <div class="g-track" data-open="${v.id}">${grid}${bar(v.reparaturStart, v.reparaturEnde, 'rep', 'Reparatur')}${bar(v.aufbereitungStart, v.aufbereitungEnde, 'auf', 'Aufbereitung')}${bar(v.verkaufStart, v.verkaufEnde, 'ver', 'Verkauf')}${mark(v.kaufdatum, 'kauf', 'Kauf')}${mark(v.verkaufsdatum, 'sold', 'Verkauft')}${today}</div></div>`).join('')
+      ${rows.length ? rows.map(v => `<div class="g-row"><div class="g-label" data-open="${v.id}"><b>${esc(vName(v))}</b><span>${isOwn(v) ? 'Eigenes Fahrzeug' : (STATUS[v.status] || STATUS.geplant).label}</span></div>
+        <div class="g-track" data-open="${v.id}">${grid}${bar(v.reparaturStart, v.reparaturEnde, 'rep', 'Reparatur')}${bar(v.aufbereitungStart, v.aufbereitungEnde, 'auf', 'Aufbereitung')}${bar(v.verkaufStart, v.verkaufEnde, 'ver', 'Verkauf')}${mark(v.kaufdatum, 'kauf', 'Kauf')}${mark(v.verkaufsdatum, 'sold', 'Verkauft')}${mark(huIso(v), 'hu', 'HU/TÜV fällig')}${repDates(v).map(d => mark(d, 'rp', 'Reparatur erledigt')).join('')}${today}</div></div>`).join('')
       : `<div class="empty">In diesem Zeitraum ist nichts geplant. Trage bei einem Fahrzeug Kaufdatum, Reparatur- und Verkaufszeitraum ein.</div>`}
     </div></div>
-    <div class="legend"><span><i class="d" style="background:var(--text)"></i>Kauf</span><span><i style="background:var(--st-reparatur)"></i>Reparatur</span><span><i style="background:#13B5A6"></i>Aufbereitung</span><span><i style="background:var(--st-verkauf)"></i>Verkauf</span><span><i class="d" style="background:var(--st-verkauft)"></i>Verkauft</span><span><i style="background:var(--red);width:2px"></i>Heute</span></div>
+    <div class="legend"><span><i class="d" style="background:var(--text)"></i>Kauf</span><span><i style="background:var(--st-reparatur)"></i>Reparatur</span><span><i style="background:#13B5A6"></i>Aufbereitung</span><span><i style="background:var(--st-verkauf)"></i>Verkauf</span><span><i class="d" style="background:var(--st-verkauft)"></i>Verkauft</span><span><i class="d" style="background:var(--red)"></i>HU/TÜV</span><span><i class="d" style="background:var(--st-reparatur);border-radius:50%;transform:none"></i>Reparatur erledigt</span><span><i style="background:var(--red);width:2px"></i>Heute</span></div>
   </section>`;
   S.ganttScroll = {pos: tp, key: S.planZoom + S.ganttOffset, w: innerW, lw: labelW};
   const ev = events().filter(e => e.d >= todayISO()).slice(0, 12);
@@ -1602,29 +1622,32 @@ function sellOwnForm(v) {
 /* ---------- Teile mit Link ---------- */
 const safeUrl = u => { u = String(u || '').trim(); if (!u) return ''; if (/^www\./i.test(u)) u = 'https://' + u; return /^https?:\/\//i.test(u) ? u : ''; };
 const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return 'Link'; } };
-const partRow = (t = {}) => `<div class="partrow"><input class="p-name" placeholder="Teil, z. B. Bremsbeläge" value="${esc(t.name || '')}" aria-label="Teil"><input class="p-link" type="url" inputmode="url" placeholder="Link (https://…)" value="${esc(t.link || '')}" aria-label="Link"><input class="p-preis" type="number" step="0.01" min="0" inputmode="decimal" placeholder="€" value="${has(t.preis) ? esc(t.preis) : ''}" aria-label="Preis"><button type="button" class="btn small ghost p-del" aria-label="Teil entfernen">✕</button></div>`;
+const partTotal = x => has(x.preis) ? (x.modus === 'gesamt' ? num(x.preis) : num(x.preis) * (num(x.menge) || 1)) : 0;
+const partRow = (t = {}) => `<div class="partrow"><input class="p-name" placeholder="Teil, z. B. Bremsbeläge" value="${esc(t.name || '')}" aria-label="Teil"><input class="p-link" type="url" inputmode="url" placeholder="Link (https://…)" value="${esc(t.link || '')}" aria-label="Link"><input class="p-menge" type="number" step="1" min="1" inputmode="numeric" placeholder="Stk" value="${esc(t.menge || 1)}" aria-label="Stückzahl"><input class="p-preis" type="number" step="0.01" min="0" inputmode="decimal" placeholder="€" value="${has(t.preis) ? esc(t.preis) : ''}" aria-label="Preis"><select class="p-modus" aria-label="Preis gilt für"><option value="stk"${t.modus !== 'gesamt' ? ' selected' : ''}>€ pro Stk</option><option value="gesamt"${t.modus === 'gesamt' ? ' selected' : ''}>€ gesamt</option></select><button type="button" class="btn small ghost p-del" aria-label="Teil entfernen">✕</button></div>`;
 function partsEditor(list) {
-  return `<fieldset class="parts"><legend>Teile</legend><div id="partrows">${(list || []).map(partRow).join('')}</div>
+  return `<fieldset class="parts"><legend>Teile</legend><p class="sub" style="margin:0">Je Teil: Bezeichnung, Link, Stückzahl, Preis – der Preis gilt wahlweise pro Stück oder für alle zusammen.</p><div id="partrows">${(list || []).map(partRow).join('')}</div>
     <div class="actions"><button type="button" class="btn small" id="addpart">${ICON.plus}Teil hinzufügen</button><span class="sub" id="partsum"></span></div></fieldset>`;
 }
 function bindParts() {
-  const box = $('#partrows'), sum = () => { const s = [...box.querySelectorAll('.p-preis')].reduce((a, i) => a + num(i.value), 0); $('#partsum').textContent = s ? 'Summe Teile: ' + eur2(s) : ''; };
+  const box = $('#partrows'), sum = () => { const s = [...box.querySelectorAll('.partrow')].reduce((a, row) => a + partTotal(rowPart(row)), 0); $('#partsum').textContent = s ? 'Summe Teile: ' + eur2(s) : ''; };
   $('#addpart').onclick = () => { box.insertAdjacentHTML('beforeend', partRow()); const n = box.lastElementChild.querySelector('.p-name'); n.focus(); sum(); };
   box.onclick = e => { const d = e.target.closest('.p-del'); if (d) { d.closest('.partrow').remove(); sum(); } };
-  box.oninput = sum; sum();
+  box.oninput = sum; box.onchange = sum; sum();
+}
+function rowPart(row) {
+  const pv = row.querySelector('.p-preis').value;
+  return {name: row.querySelector('.p-name').value.trim(), link: row.querySelector('.p-link').value.trim(),
+    menge: Math.max(1, Math.round(num(row.querySelector('.p-menge').value)) || 1), preis: pv === '' ? '' : num(pv), modus: row.querySelector('.p-modus').value};
 }
 function readParts() {
-  return [...document.querySelectorAll('#partrows .partrow')].map(row => ({
-    id: uid(), name: row.querySelector('.p-name').value.trim(), link: row.querySelector('.p-link').value.trim(),
-    preis: row.querySelector('.p-preis').value === '' ? '' : num(row.querySelector('.p-preis').value)
-  })).filter(t => t.name || t.link);
+  return [...document.querySelectorAll('#partrows .partrow')].map(row => ({id: uid(), ...rowPart(row)})).filter(t => t.name || t.link);
 }
 const eur2 = n => new Intl.NumberFormat('de-DE', {style: 'currency', currency: 'EUR'}).format(Number(n) || 0);
 function partsHTML(r) {
   const t = r.teile || []; if (!t.length) return '';
-  const s = t.reduce((a, x) => a + num(x.preis), 0);
+  const s = t.reduce((a, x) => a + partTotal(x), 0);
   return `<div class="parts-list"><span class="sub">Teile${s ? ' (' + eur2(s) + ')' : ''}:</span>${t.map(x => { const u = safeUrl(x.link), label = esc(x.name || hostOf(u));
-    return `<span>${u ? `<a class="lnk" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>` : label}${has(x.preis) ? ` <span class="sub">${eur2(x.preis)}</span>` : ''}</span>`; }).join('')}</div>`;
+    return `<span>${u ? `<a class="lnk" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>` : label}${(num(x.menge) || 1) > 1 ? ` <span class="sub">${x.menge} Stk${has(x.preis) ? (x.modus === 'gesamt' ? ` · ${eur2(partTotal(x))} gesamt` : ` à ${eur2(x.preis)} = ${eur2(partTotal(x))}`) : ''}</span>` : has(x.preis) ? ` <span class="sub">${eur2(partTotal(x))}</span>` : ''}</span>`; }).join('')}</div>`;
 }
 
 function repForm(v, r, finish) {
@@ -1642,7 +1665,7 @@ function repForm(v, r, finish) {
     onSave: d => {
       const cur = S.vehicles.find(x => x.id === v.id) || v;
       const item = {...(r || {id: uid()}), ...d, erledigt: d.status === 'erledigt', entfallen: d.status === 'entfallen', teile: readParts()}; delete item.status;
-      { const ps = item.teile.reduce((a, x) => a + num(x.preis), 0); if (!has(item.planKosten) && ps) item.planKosten = Math.round(ps * 100) / 100; }
+      { const ps = item.teile.reduce((a, x) => a + partTotal(x), 0); if (!has(item.planKosten) && ps) item.planKosten = Math.round(ps * 100) / 100; }
       if (item.erledigt && !item.datum) item.datum = todayISO();
       const list = reps(cur).filter(x => !r || x.id !== r.id);
       const idx = r ? reps(cur).findIndex(x => x.id === r.id) : -1;
