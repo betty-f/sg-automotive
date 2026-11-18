@@ -236,6 +236,9 @@ a.btn{text-decoration:none}
 .act-h h2{white-space:nowrap;flex:none}
 .act-last{margin-left:auto;flex:1;min-width:0;text-align:right;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .act-h .chev{color:var(--muted);font-size:14px}
+/* Phase abgeschlossen */
+.phase-chk{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:14px;color:var(--text);cursor:pointer;font-weight:500}
+.phase-chk input{width:18px;height:18px;padding:0;margin:0;accent-color:var(--green);flex:none}
 /* Reparaturen */
 .rep-list .rep{align-items:flex-start}
 .chk{width:28px;height:28px;border-radius:8px;border:2px solid var(--muted);background:none;color:transparent;display:grid;place-items:center;cursor:pointer;flex:none;margin-top:1px;font-weight:700}
@@ -874,10 +877,11 @@ function events() {
   for (const v of tradeCars()) {
     const n = vName(v);
     if (v.kaufdatum && !isBought(v)) ev.push({d:v.kaufdatum, t:'Kauf geplant', v});
-    if (v.reparaturStart && v.status !== 'verkauft' && v.status !== 'verkauf') ev.push({d:v.reparaturStart, t:'Reparatur beginnt', v});
-    if (v.reparaturEnde && v.status !== 'verkauft' && v.status !== 'verkauf') ev.push({d:v.reparaturEnde, t:'Reparatur fertig', v});
-    if (v.aufbereitungStart && v.status !== 'verkauft') ev.push({d:v.aufbereitungStart, t:'Aufbereitung beginnt', v});
-    if (v.aufbereitungEnde && v.status !== 'verkauft') ev.push({d:v.aufbereitungEnde, t:'Aufbereitung fertig', v});
+    if (v.reparaturStart && v.status !== 'verkauft' && v.status !== 'verkauf' && !repComplete(v)) ev.push({d:v.reparaturStart, t:'Reparatur beginnt', v});
+    if (v.reparaturEnde && v.status !== 'verkauft' && v.status !== 'verkauf' && !repComplete(v)) ev.push({d:v.reparaturEnde, t:'Reparatur fertig', v});
+    if (v.aufbereitungStart && v.status !== 'verkauft' && !aufComplete(v)) ev.push({d:v.aufbereitungStart, t:'Aufbereitung beginnt', v});
+    if (v.aufbereitungEnde && v.status !== 'verkauft' && !aufComplete(v)) ev.push({d:v.aufbereitungEnde, t:'Aufbereitung fertig', v});
+    if (v.status !== 'verkauft') for (const d of tuevDates(v)) ev.push({d, t:'TÜV/HU', v});
     if (v.verkaufStart && v.status !== 'verkauft') ev.push({d:v.verkaufStart, t:'Verkaufsstart', v});
     if (v.verkaufEnde && v.status !== 'verkauft') ev.push({d:v.verkaufEnde, t:'Verkauf bis', v});
   }
@@ -934,13 +938,51 @@ function head(title, sub, actions = '') {
 }
 const addBtn = (act, label) => `<button class="btn primary" data-act="${act}" data-needs-write>${ICON.plus}${label}</button>`;
 
+/* ---------- Bearbeitungsstand, TÜV-Termine, Phasen abschließen ---------- */
+const TUEV_RX = /t[üu]v|\bhu\b|hauptuntersuchung/i;
+const tuevDates = v => [v.tuevTermin,
+  ...(v.kosten || []).filter(k => k.datum && TUEV_RX.test((k.text || '') + ' ' + (k.kategorie || ''))).map(k => k.datum),
+  ...reps(v).filter(r => r.datum && !r.entfallen && TUEV_RX.test((r.titel || '') + ' ' + (r.kategorie || ''))).map(r => r.datum)].filter(Boolean);
+const repComplete = v => !!v.reparaturFertig || (reps(v).length > 0 && reps(v).every(r => r.erledigt || r.entfallen));
+const aufComplete = v => !!v.aufbereitungFertig;
+function phaseOf(v) {
+  const t = todayISO(), rl = reps(v).filter(r => !r.entfallen), rd = rl.filter(r => r.erledigt).length;
+  if (!repComplete(v) && (rl.length || v.reparaturStart)) return {l: 'Reparatur', c: 'var(--st-reparatur)', d: [rl.length ? rd + '/' + rl.length + ' erledigt' : '', v.reparaturEnde ? 'bis ' + fds(v.reparaturEnde) : ''].filter(Boolean).join(' · '), late: !!v.reparaturEnde && v.reparaturEnde < t};
+  if (!aufComplete(v) && v.aufbereitungStart) return {l: 'Aufbereitung', c: '#13B5A6', d: [v.aufbereitungStart > t ? 'ab ' + fds(v.aufbereitungStart) : 'läuft', v.aufbereitungEnde ? 'bis ' + fds(v.aufbereitungEnde) : ''].filter(Boolean).join(' · '), late: !!v.aufbereitungEnde && v.aufbereitungEnde < t};
+  if (v.status === 'verkauf' || (v.verkaufStart && v.verkaufStart <= t)) return {l: 'Im Verkauf', c: 'var(--st-verkauf)', d: [v.verkaufStart ? 'seit ' + fds(v.verkaufStart) : '', num(v.zielpreis) ? 'Ziel ' + eur(v.zielpreis) : ''].filter(Boolean).join(' · '), late: !!v.verkaufEnde && v.verkaufEnde < t};
+  return {l: 'Verkaufsbereit', c: 'var(--st-verkauft)', d: v.verkaufStart ? 'Verkauf ab ' + fds(v.verkaufStart) : 'Verkaufszeitraum noch offen', late: false};
+}
+function inWorkHTML(list) {
+  return `<section class="panel"><div class="panel-h"><h2>In Bearbeitung</h2><span class="sub">zwischen Kauf und Verkauf · ${list.length}</span></div>
+    ${list.length ? `<ul class="list">${list.map(v => { const p = phaseOf(v), sd = days(v.kaufdatum, todayISO());
+      return `<li data-open="${v.id}" style="cursor:pointer"><div class="grow"><b>${esc(vName(v))}</b>
+        <div class="sub" style="margin-top:2px"><span class="badge" style="--c:${p.c}">${p.l}</span> ${esc(p.d)}${p.late ? ' <b class="neg">· überfällig</b>' : ''}</div>
+        <div class="sub">${sd != null && sd >= 0 ? sd + ' Tage seit Kauf · ' : ''}investiert ${eur(investOf(v))}</div></div><span class="sub" aria-hidden="true">›</span></li>`; }).join('')}</ul>`
+      : `<div class="empty">Kein Fahrzeug zwischen Kauf und Verkauf.</div>`}</section>`;
+}
+const phaseChk = (v, k) => {
+  const f = k === 'rep' ? v.reparaturFertig : v.aufbereitungFertig, auto = k === 'rep' && !f && repComplete(v);
+  return `<label class="phase-chk"><input type="checkbox" data-phasedone="${k}" data-id="${v.id}"${f ? ' checked' : ''}${S.canWrite ? '' : ' disabled'}> abgeschlossen${f ? ' am ' + fds(f) : ''}</label>${auto ? '<p class="sub" style="font-size:12px;margin:2px 0 0">Checkliste komplett erledigt</p>' : ''}`;
+};
+document.addEventListener('change', e => {
+  const c = e.target.closest('[data-phasedone]'); if (!c) return;
+  const v = S.vehicles.find(x => x.id === c.dataset.id); if (!v) return;
+  const rep = c.dataset.phasedone === 'rep', t = todayISO();
+  const [fk, sk, ek, lbl] = rep ? ['reparaturFertig', 'reparaturStart', 'reparaturEnde', 'Reparatur'] : ['aufbereitungFertig', 'aufbereitungStart', 'aufbereitungEnde', 'Aufbereitung'];
+  const o = {...v};
+  if (c.checked) { o[fk] = t; if (!o[sk] || o[sk] > t) o[sk] = t; o[ek] = t; }
+  else o[fk] = '';
+  Store.save('vehicles', o, `hat ${lbl} bei ${vName(v)} ${c.checked ? 'abgeschlossen' : 'wieder geöffnet'}`);
+  toast(c.checked ? `${lbl} abgeschlossen – Zeitraum endet heute` : `${lbl} wieder offen`);
+});
+
 function renderHome() {
   const f = finance();
   const counts = Object.fromEntries(Object.keys(STATUS).map(k => [k, tradeCars().filter(v => (v.status || 'geplant') === k).length]));
   const t = todayISO();
   const ev = events();
   const up = ev.filter(e => e.d >= t).slice(0, 7);
-  const overdue = ev.filter(e => e.d < t && (e.t === 'Reparatur fertig' || e.t === 'Aufbereitung fertig' || e.t === 'Verkauf bis' || e.t === 'Kauf geplant'));
+  const overdue = ev.filter(e => e.d < t && (e.t === 'Reparatur fertig' || e.t === 'Aufbereitung fertig' || e.t === 'Verkauf bis' || e.t === 'Kauf geplant')); // erledigte Phasen erzeugen gar keine Termine mehr
   const hasData = S.vehicles.length || S.entries.length || S.tools.length;
   let h = `<section class="hero"><img src="${HERO}" alt="SG Automotive – Ankauf, Aufbereitung, Verkauf"></section>`;
   h += head('Übersicht', new Date().toLocaleDateString('de-DE', {weekday:'long', day:'numeric', month:'long', year:'numeric'}), addBtn('new-car', 'Fahrzeug anlegen'));
@@ -956,12 +998,10 @@ function renderHome() {
     return h + `<div style="margin-top:20px">${activityHTML()}</div>`;
   }
   h += `<div class="grid2"><div class="stack">
+    ${inWorkHTML(f.open)}
     <section class="panel"><div class="panel-h"><h2>Fahrzeuge nach Phase</h2><button class="btn small ghost" data-nav="fahrzeuge">Alle Akten</button></div>
       <div class="panel-b"><div class="pipeline">${Object.entries(STATUS).map(([k, s]) => `<div class="stage" style="--c:${s.c}"><b>${counts[k]}</b><span>${s.label}</span></div>`).join('')}</div></div></section>
-    <section class="panel"><div class="panel-h"><h2>Im Bestand</h2></div>
-      ${f.open.length ? `<ul class="list">${f.open.map(v => `<li><div class="grow"><b>${esc(vName(v))}</b><div class="sub">${badge(v.status)} · investiert ${eur(investOf(v))}</div></div>
-        <button class="btn small" data-open="${v.id}">Akte</button></li>`).join('')}</ul>` : `<div class="empty">Kein Fahrzeug im Bestand.</div>`}
-    </section></div>
+    </div>
     <div class="stack">
     ${overdue.length ? `<section class="panel"><div class="panel-h"><h2 class="neg">Überfällig</h2></div><ul class="list">${overdue.map(evLi).join('')}</ul></section>` : ''}
     <section class="panel"><div class="panel-h"><h2>Als Nächstes</h2><button class="btn small ghost" data-nav="planung">Planung</button></div>
@@ -1017,13 +1057,13 @@ function renderAkte(v) {
     <div class="actions"><button class="btn" data-act="edit-car" data-id="${v.id}" data-needs-write>Bearbeiten</button>${addBtn('new-cost','Kosten erfassen').replace('data-act="new-cost"', `data-act="new-cost" data-id="${v.id}"`)}</div></div>`;
   h += `<div class="grid2"><div class="stack">
     <section class="panel"><div class="panel-h"><h2>Fahrzeugdaten</h2></div><div class="panel-b"><dl class="facts">
-      ${[['Marke', v.marke], ['Modell', v.modell], ['Baujahr / EZ', v.baujahr], ['Kilometer', v.km ? Number(v.km).toLocaleString('de-DE') + ' km' : ''], ['Kraftstoff', v.kraftstoff], ['Leistung', (v.ps || v.kw) ? `${v.ps || Math.round(num(v.kw) / 0.73549875)} PS (${v.kw || Math.round(num(v.ps) * 0.73549875)} kW)` : ''], ['Hubraum', v.hubraum ? Number(v.hubraum).toLocaleString('de-DE') + ' cm³' : ''], ['Getriebe', v.getriebe], ['Vorbesitzer', has(v.vorbesitzer) ? String(v.vorbesitzer) : ''], ['Kennzeichen', v.kennzeichen], ['FIN', v.fin], ['Farbe', v.farbe], ['HU/TÜV bis', fmtMonth(v.hu)], ...(isOwn(v) ? [] : [['Verkäufer', v.verkaeufer], ['Adresse Verkäufer', v.verkaeuferAdresse], ['Käufer', v.kaeufer], ['Adresse Käufer', v.kaeuferAdresse]])]
+      ${[['Marke', v.marke], ['Modell', v.modell], ['Baujahr / EZ', v.baujahr], ['Kilometer', v.km ? Number(v.km).toLocaleString('de-DE') + ' km' : ''], ['Kraftstoff', v.kraftstoff], ['Leistung', (v.ps || v.kw) ? `${v.ps || Math.round(num(v.kw) / 0.73549875)} PS (${v.kw || Math.round(num(v.ps) * 0.73549875)} kW)` : ''], ['Hubraum', v.hubraum ? Number(v.hubraum).toLocaleString('de-DE') + ' cm³' : ''], ['Getriebe', v.getriebe], ['Vorbesitzer', has(v.vorbesitzer) ? String(v.vorbesitzer) : ''], ['Kennzeichen', v.kennzeichen], ['FIN', v.fin], ['Farbe', v.farbe], ['HU/TÜV bis', fmtMonth(v.hu)], ['TÜV/HU-Termin', v.tuevTermin ? fd(v.tuevTermin) : ''], ...(isOwn(v) ? [] : [['Verkäufer', v.verkaeufer], ['Adresse Verkäufer', v.verkaeuferAdresse], ['Käufer', v.kaeufer], ['Adresse Käufer', v.kaeuferAdresse]])]
         .map(([l, x]) => `<div><dt>${l}</dt><dd>${esc(x) || '–'}</dd></div>`).join('')}
     </dl></div></section>
     ${isOwn(v) ? '' : `<section class="panel"><div class="phase">
       <div><h3 style="--c:var(--text)"><i></i>Einkauf</h3><p>${fd(v.kaufdatum)}</p><p class="sub">${eur(v.kaufpreis)}</p></div>
-      <div><h3 style="--c:var(--st-reparatur)"><i></i>Reparatur</h3><p>${v.reparaturStart ? fds(v.reparaturStart) + ' – ' + fds(v.reparaturEnde) : '–'}</p><p class="sub">${repDays != null ? repDays + ' Tage' : 'nicht geplant'}</p></div>
-      <div><h3 style="--c:#13B5A6"><i></i>Aufbereitung</h3><p>${v.aufbereitungStart ? fds(v.aufbereitungStart) + ' – ' + fds(v.aufbereitungEnde) : '–'}</p><p class="sub">${aufDays != null ? aufDays + ' Tage' : 'nicht geplant'}</p></div>
+      <div><h3 style="--c:var(--st-reparatur)"><i></i>Reparatur</h3><p>${v.reparaturStart ? fds(v.reparaturStart) + ' – ' + fds(v.reparaturEnde) : '–'}</p><p class="sub">${repDays != null ? repDays + ' Tage' : 'nicht geplant'}</p>${phaseChk(v, 'rep')}</div>
+      <div><h3 style="--c:#13B5A6"><i></i>Aufbereitung</h3><p>${v.aufbereitungStart ? fds(v.aufbereitungStart) + ' – ' + fds(v.aufbereitungEnde) : '–'}</p><p class="sub">${aufDays != null ? aufDays + ' Tage' : 'nicht geplant'}</p>${phaseChk(v, 'auf')}</div>
       <div><h3 style="--c:var(--st-verkauf)"><i></i>Verkauf</h3><p>${v.verkaufStart ? fds(v.verkaufStart) + ' – ' + fds(v.verkaufEnde) : '–'}</p><p class="sub">${v.verkaufsdatum ? 'verkauft am ' + fd(v.verkaufsdatum) : num(v.zielpreis) ? 'Ziel ' + eur(v.zielpreis) : 'kein Zielpreis'}</p></div>
     </div></section>`}
     ${docsHTML(v)}
@@ -1310,7 +1350,7 @@ function renderPlan() {
   const repDates = v => reps(v).filter(r => r.datum && !r.entfallen).map(r => r.datum);
   const hidden = {sold: 0, own: 0};
   const rows = S.vehicles.filter(v => {
-    const any = inRange(v.kaufdatum) || inRange(v.reparaturStart, v.reparaturEnde) || inRange(v.aufbereitungStart, v.aufbereitungEnde) || inRange(v.verkaufStart, v.verkaufEnde) || inRange(v.verkaufsdatum) || inRange(huIso(v)) || repDates(v).some(d => inRange(d));
+    const any = inRange(v.kaufdatum) || inRange(v.reparaturStart, v.reparaturEnde) || inRange(v.aufbereitungStart, v.aufbereitungEnde) || inRange(v.verkaufStart, v.verkaufEnde) || inRange(v.verkaufsdatum) || inRange(huIso(v)) || repDates(v).some(d => inRange(d)) || tuevDates(v).some(d => inRange(d));
     if (!any) return false;
     if (isOwn(v) && !showOwn) { hidden.own++; return false; }
     if (!isOwn(v) && v.status === 'verkauft' && !showSold) { hidden.sold++; return false; }
@@ -1350,7 +1390,7 @@ function renderPlan() {
         ${detail ? `<div class="g-weeks">${weeks.map(w => `<span style="left:${pct(w)}%">KW ${kw(w)}<small>${w.getDate()}.${w.getMonth() + 1}.</small></span>`).join('')}</div>` : ''}
         ${today}</div></div>
       ${rows.length ? rows.map(v => `<div class="g-row"><div class="g-label" data-open="${v.id}"><b>${esc(vName(v))}</b><span>${isOwn(v) ? 'Eigenes Fahrzeug' : (STATUS[v.status] || STATUS.geplant).label}</span></div>
-        <div class="g-track" data-open="${v.id}">${grid}${bar(v.reparaturStart, v.reparaturEnde, 'rep', 'Reparatur')}${bar(v.aufbereitungStart, v.aufbereitungEnde, 'auf', 'Aufbereitung')}${bar(v.verkaufStart, v.verkaufEnde, 'ver', 'Verkauf')}${mark(v.kaufdatum, 'kauf', 'Kauf')}${mark(v.verkaufsdatum, 'sold', 'Verkauft')}${mark(huIso(v), 'hu', 'HU/TÜV fällig')}${repDates(v).map(d => mark(d, 'rp', 'Reparatur erledigt')).join('')}${today}</div></div>`).join('')
+        <div class="g-track" data-open="${v.id}">${grid}${bar(v.reparaturStart, v.reparaturEnde, 'rep', 'Reparatur')}${bar(v.aufbereitungStart, v.aufbereitungEnde, 'auf', 'Aufbereitung')}${bar(v.verkaufStart, v.verkaufEnde, 'ver', 'Verkauf')}${mark(v.kaufdatum, 'kauf', 'Kauf')}${mark(v.verkaufsdatum, 'sold', 'Verkauft')}${mark(huIso(v), 'hu', 'HU/TÜV fällig')}${tuevDates(v).map(d => mark(d, 'hu', 'TÜV/HU-Termin')).join('')}${repDates(v).map(d => mark(d, 'rp', 'Reparatur erledigt')).join('')}${today}</div></div>`).join('')
       : `<div class="empty">In diesem Zeitraum ist nichts geplant. Trage bei einem Fahrzeug Kaufdatum, Reparatur- und Verkaufszeitraum ein.</div>`}
     </div></div>
     <div class="legend"><span><i class="d" style="background:var(--text)"></i>Kauf</span><span><i style="background:var(--st-reparatur)"></i>Reparatur</span><span><i style="background:#13B5A6"></i>Aufbereitung</span><span><i style="background:var(--st-verkauf)"></i>Verkauf</span><span><i class="d" style="background:var(--st-verkauft)"></i>Verkauft</span><span><i class="d" style="background:var(--red)"></i>HU/TÜV</span><span><i class="d" style="background:var(--st-reparatur);border-radius:50%;transform:none"></i>Reparatur erledigt</span><span><i style="background:var(--red);width:2px"></i>Heute</span></div>
@@ -1592,7 +1632,7 @@ const CAR_FORM = [
     {k:'kennzeichen', l:'Kennzeichen'}, {k:'fin', l:'FIN'}, {k:'farbe', l:'Farbe'}, {k:'hu', l:'HU/TÜV bis', t:'month'}, ...TECH_FIELDS,
     {k:'status', l:'Status', t:'select', o:Object.entries(STATUS).map(([k, s]) => [k, s.label]), def:'geplant'}]},
   {l:'Einkauf', f:[{k:'kaufdatum', l:'Kaufdatum (geplant oder erfolgt)', t:'date'}, {k:'kaufpreis', l:'Kaufpreis', t:'eur'}, {k:'verkaeufer', l:'Verkäufer – Name', full:true}, {k:'verkaeuferAdresse', l:'Verkäufer – Adresse (Straße, PLZ, Ort)', t:'area', full:true}]},
-  {l:'Reparatur', f:[{k:'repRange', t:'range', from:'reparaturStart', to:'reparaturEnde', l:'Zeitraum Reparatur (nach dem Kauf)', min:['kaufdatum']}]},
+  {l:'Reparatur', f:[{k:'repRange', t:'range', from:'reparaturStart', to:'reparaturEnde', l:'Zeitraum Reparatur (nach dem Kauf)', min:['kaufdatum']}, {k:'tuevTermin', l:'TÜV/HU-Termin', t:'date'}]},
   {l:'Aufbereitung', f:[{k:'aufRange', t:'range', from:'aufbereitungStart', to:'aufbereitungEnde', l:'Zeitraum Aufbereitung (nach der Reparatur)', min:['reparaturEnde', 'kaufdatum']}]},
   {l:'Verkauf', f:[{k:'verRange', t:'range', from:'verkaufStart', to:'verkaufEnde', l:'Verkaufszeitraum (nach der Aufbereitung)', min:['aufbereitungEnde', 'reparaturEnde', 'kaufdatum']}, {k:'zielpreis', l:'Zielpreis', t:'eur'},
     {k:'verkaufsdatum', l:'Tatsächlich verkauft am', t:'date'}, {k:'verkaufspreis', l:'Verkaufspreis', t:'eur'}, {k:'kaeufer', l:'Käufer – Name', full:true}, {k:'kaeuferAdresse', l:'Käufer – Adresse (Straße, PLZ, Ort)', t:'area', full:true}]},
@@ -1600,7 +1640,7 @@ const CAR_FORM = [
 ];
 const OWN_FORM = [
   {l:'Fahrzeug', f:[{k:'marke', l:'Marke', req:true}, {k:'modell', l:'Modell'}, {k:'baujahr', l:'Baujahr / EZ'}, {k:'km', l:'Kilometerstand', t:'number'},
-    {k:'kennzeichen', l:'Kennzeichen'}, {k:'fin', l:'FIN'}, {k:'farbe', l:'Farbe'}, {k:'hu', l:'HU/TÜV bis', t:'month'}, ...TECH_FIELDS]},
+    {k:'kennzeichen', l:'Kennzeichen'}, {k:'fin', l:'FIN'}, {k:'farbe', l:'Farbe'}, {k:'hu', l:'HU/TÜV bis', t:'month'}, {k:'tuevTermin', l:'TÜV/HU-Termin', t:'date'}, ...TECH_FIELDS]},
   {l:'Anschaffung (nur Info)', f:[{k:'kaufdatum', l:'Gekauft am', t:'date'}, {k:'kaufpreis', l:'Kaufpreis', t:'eur'}]},
   {l:'Notizen', f:[{k:'notizen', l:'Versicherung, Reifen, Besonderheiten …', t:'area', full:true}]}
 ];
