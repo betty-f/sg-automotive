@@ -816,6 +816,7 @@ const isOwn = v => v.art === 'eigen';
 const tradeCars = () => S.vehicles.filter(v => !isOwn(v));
 const OWN_C = '#8B6CF0';
 const ownBadge = v => `<span class="badge" style="--c:${OWN_C}">Eigenes Fahrzeug${v.ausHandel ? ' · behalten' : ''}</span>`;
+const ownOpen = v => reps(v).filter(r => !r.erledigt && !r.entfallen).length;
 const vBadge = v => isOwn(v) ? ownBadge(v) : badge(v.status);
 const fmtMonth = s => { if (!s) return ''; const [y, m] = s.split('-'); return m && y ? `${m}/${y}` : s; };
 const huSoon = s => { if (!s) return false; const [y, m] = s.split('-').map(Number); const end = new Date(y, m, 0); return end - new Date() < 60 * 864e5; };
@@ -1034,14 +1035,21 @@ function renderCars() {
   const filters = [['aktiv','Aktiv'],['alle','Alle'],...Object.entries(STATUS).map(([k, s]) => [k, s.label]),['eigen','Eigene Fahrzeuge']];
   const q = S.q.trim().toLowerCase();
   let list = S.vehicles.filter(v => {
-    if ((S.filter === 'eigen') !== isOwn(v)) return false;
-    if (S.filter === 'aktiv' && v.status === 'verkauft') return false;
-    if (STATUS[S.filter] && (v.status || 'geplant') !== S.filter) return false;
+    if (isOwn(v)) {
+      // eigene Fahrzeuge: unter „Alle“ und „Eigene“ immer, unter „Aktiv“ und „In Reparatur“ nur mit offenen Reparaturen
+      const ok = S.filter === 'eigen' || S.filter === 'alle' || ((S.filter === 'aktiv' || S.filter === 'reparatur') && ownOpen(v));
+      if (!ok) return false;
+    } else {
+      if (S.filter === 'eigen') return false;
+      if (S.filter === 'aktiv' && v.status === 'verkauft') return false;
+      if (STATUS[S.filter] && (v.status || 'geplant') !== S.filter) return false;
+    }
     if (q && ![v.marke, v.modell, v.kennzeichen, v.fin, v.farbe, v.verkaeufer, v.kaeufer].join(' ').toLowerCase().includes(q)) return false;
     return true;
   });
   const order = Object.keys(STATUS);
-  list.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || (b.kaufdatum || '').localeCompare(a.kaufdatum || ''));
+  const rk = v => isOwn(v) ? 99 : order.indexOf(v.status);
+  list.sort((a, b) => rk(a) - rk(b) || (b.kaufdatum || '').localeCompare(a.kaufdatum || ''));
   const nT = tradeCars().length, nO = S.vehicles.length - nT;
   let h = head('Fahrzeugakten', `${nT} Handelsfahrzeug${nT === 1 ? '' : 'e'}${nO ? ` · ${nO} eigene${nO === 1 ? 's' : ''}` : ''}`,
     `<button class="btn" data-act="new-own" data-needs-write>${ICON.plus}Eigenes Fahrzeug</button>` + addBtn('new-car', 'Fahrzeug anlegen'));
@@ -1057,7 +1065,7 @@ function renderCars() {
     return `<button class="car" style="--c:${s.c}" data-open="${v.id}">
       ${cov ? `<div class="cover">${imgTag(cov.id, vName(v))}</div>` : ''}
       <div><h3>${esc(vName(v))}</h3><div class="meta">${[v.baujahr, v.km ? Number(v.km).toLocaleString('de-DE') + ' km' : '', (v.ps || v.kw) ? (v.ps || Math.round(num(v.kw) / 0.73549875)) + ' PS' : '', v.kraftstoff ? v.kraftstoff.split(' (')[0] : '', v.getriebe ? v.getriebe.split(' (')[0] : '', v.kennzeichen].filter(Boolean).map(esc).join(' · ') || '&nbsp;'}</div></div>
-      <div>${vBadge(v)}</div>
+      <div>${vBadge(v)}${isOwn(v) && ownOpen(v) ? ` <span class="badge" style="--c:var(--st-reparatur)">${ownOpen(v)} Reparatur${ownOpen(v) === 1 ? '' : 'en'} offen</span>` : ''}</div>
       ${isOwn(v) ? `<dl><div><dt>Kilometer</dt><dd>${v.km ? Number(v.km).toLocaleString('de-DE') : '–'}</dd></div><div><dt>HU/TÜV bis</dt><dd class="${huSoon(v.hu) ? 'neg' : ''}">${fmtMonth(v.hu) || '–'}</dd></div><div><dt>Kosten</dt><dd>${eur(costSum(v))}</dd></div></dl>`
       : `<dl><div><dt>Kaufpreis</dt><dd>${eur(v.kaufpreis)}</dd></div><div><dt>Investiert</dt><dd>${eur(investOf(v))}</dd></div><div><dt>${third[0]}</dt><dd>${third[1]}</dd></div></dl>`}
     </button>`;
