@@ -176,13 +176,13 @@ img.broken{opacity:0}
 .namepick{display:flex;gap:8px;flex-wrap:wrap}
 @media (max-width:820px){.brand .sync{display:none}.userchip{max-width:120px}}
 /* Teile */
-.partrow{display:grid;grid-template-columns:1.2fr 1.4fr 64px 90px 108px 36px;grid-template-areas:'n l m p mo d';gap:6px;align-items:center;margin-bottom:6px}
+.partrow{display:grid;grid-template-columns:1.2fr 1.4fr 64px 90px 108px 36px;grid-template-areas:'n l m p mo d' 'a a a a a a';gap:6px;align-items:center;margin-bottom:6px}
 .p-name{grid-area:n}.p-link{grid-area:l}.p-menge{grid-area:m}.p-preis{grid-area:p}.p-modus{grid-area:mo;padding:7px 6px!important}.p-del{grid-area:d}
 .partrow input{padding:7px 9px}
 .parts .actions{grid-column:1/-1;align-items:center}
 .parts{grid-template-columns:1fr!important}
 .parts-list{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px;margin-top:4px}
-@media (max-width:820px){.partrow{grid-template-columns:64px 1fr 1.2fr 36px;grid-template-areas:'n n n d' 'l l l l' 'm p mo mo';padding-bottom:8px;border-bottom:1px solid var(--line)}}
+@media (max-width:820px){.partrow{grid-template-columns:64px 1fr 1.2fr 36px;grid-template-areas:'n n n d' 'l l l l' 'm p mo mo' 'a a a a';padding-bottom:8px;border-bottom:1px solid var(--line)}}
 /* Zeitraum-Auswahl */
 .rng{grid-column:1/-1;display:grid;gap:6px}
 .rng-l{font-size:14px;color:var(--muted);font-weight:500}
@@ -244,6 +244,11 @@ a.btn{text-decoration:none}
 .lnk-btn{background:none;border:0;padding:0;cursor:pointer;font:inherit;font-size:13px}
 .beleg{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--line);font-size:14px}
 .beleg.removed span{text-decoration:line-through;opacity:.5}
+/* Anhänge an Teilen */
+.p-att{grid-area:a;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.p-chip{display:inline-flex;align-items:center;gap:4px;font-size:13px;border:1px solid var(--line);border-radius:999px;padding:2px 4px 2px 10px;background:var(--surface)}
+.p-chip.removed{text-decoration:line-through;opacity:.5}
+.p-adel{background:none;border:0;color:var(--muted);cursor:pointer;padding:0 4px;font-size:13px}
 /* Reparaturen */
 .rep-list .rep{align-items:flex-start}
 .chk{width:28px;height:28px;border-radius:8px;border:2px solid var(--muted);background:none;color:transparent;display:grid;place-items:center;cursor:pointer;flex:none;margin-top:1px;font-weight:700}
@@ -780,7 +785,9 @@ let toastT;
 function toast(msg) { const el = $('#toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2600); }
 
 /* ---------- Calculations ---------- */
-const postenSum = v => (v.kosten || []).reduce((a, k) => a + num(k.betrag), 0);
+// Kostenposten: „offen“ = noch nicht bezahlt (erwartet); ohne Angabe gilt ein Posten als bezahlt
+const postenSum = v => (v.kosten || []).filter(k => !k.offen).reduce((a, k) => a + num(k.betrag), 0);
+const postenOpen = v => (v.kosten || []).filter(k => k.offen).reduce((a, k) => a + num(k.betrag), 0);
 const reps = v => v.reparaturen || [];
 const repIst = v => reps(v).filter(r => r.erledigt).reduce((a, r) => a + num(r.istKosten), 0);
 const repOpen = v => reps(v).filter(r => !r.erledigt && !r.entfallen).reduce((a, r) => a + num(r.planKosten), 0);
@@ -823,7 +830,7 @@ const huSoon = s => { if (!s) return false; const [y, m] = s.split('-').map(Numb
 const isSold = v => v.status === 'verkauft';
 const investOf = v => num(v.kaufpreis) + costSum(v);
 const profitOf = v => num(v.verkaufspreis) - investOf(v);
-const expectedOf = v => num(v.zielpreis) - investOf(v) - repOpen(v);
+const expectedOf = v => num(v.zielpreis) - investOf(v) - repOpen(v) - postenOpen(v);
 const imgs = v => (v.bilder || []).filter(b => b && b.id);
 const imgTag = (id, alt) => `<img src="${blob(id)}" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.classList.add('broken')">`;
 const linkify = s => esc(s).replace(/(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi, m => {
@@ -872,13 +879,14 @@ function finance() {
   const erloese = sold.reduce((a, v) => a + num(v.verkaufspreis), 0);
   const werkzeug = S.tools.filter(t => t.status === 'gekauft').reduce((a, t) => a + num(t.preis), 0);
   const werkzeugPlan = S.tools.filter(t => t.status !== 'gekauft').reduce((a, t) => a + num(t.preis), 0);
+  const kostenOffen = T.filter(isBought).reduce((a, v) => a + postenOpen(v), 0);
   const fahrzeugPlan = T.filter(v => v.status === 'geplant').reduce((a, v) => a + num(v.kaufpreis), 0);
   const kasse = einlagen + fzEinlage - entnahmen + einnahmen - ausgaben + erloese - kaufSum - kostenSum - werkzeug - behaltenSum;
   const gebunden = open.reduce((a, v) => a + investOf(v), 0);
   const realisiert = sold.reduce((a, v) => a + profitOf(v), 0);
   const erwartet = open.filter(v => num(v.zielpreis) > 0).reduce((a, v) => a + expectedOf(v), 0);
   const ergebnis = realisiert + einnahmen - ausgaben - werkzeug;
-  return {fzEinlage, behalten, behaltenSum, einlagen, entnahmen, ausgaben, einnahmen, kaufSum, kostenSum, erloese, werkzeug, werkzeugPlan, fahrzeugPlan, kasse, gebunden, realisiert, erwartet, ergebnis, sold, open};
+  return {kostenOffen, fzEinlage, behalten, behaltenSum, einlagen, entnahmen, ausgaben, einnahmen, kaufSum, kostenSum, erloese, werkzeug, werkzeugPlan, fahrzeugPlan, kasse, gebunden, realisiert, erwartet, ergebnis, sold, open};
 }
 
 function events() {
@@ -1098,9 +1106,9 @@ function renderAkte(v) {
     ${repairsHTML(v)}
     <section class="panel"><div class="panel-h"><h2>Kosten &amp; Investitionen</h2><span class="sub">${k.length} Posten</span></div>
       ${k.length ? `<div class="scroll-x"><table><thead><tr><th>Datum</th><th>Posten</th><th>Kategorie</th><th class="r">Betrag</th><th></th></tr></thead><tbody>
-        ${k.map(x => `<tr><td>${fd(x.datum)}</td><td>${esc(x.text)}${x.kalender && x.datum ? ' <span title="im Kalender" aria-label="im Kalender">📅</span>' : ''}${belegeHTML(v, x)}${byLine(x)}</td><td class="sub">${esc(x.kategorie)}</td><td class="r">${eur(x.betrag)}</td>
-          <td class="r"><button class="btn small ghost" data-act="edit-cost" data-id="${v.id}" data-cost="${x.id}" data-needs-write>Ändern</button></td></tr>`).join('')}
-      </tbody><tfoot><tr><td colspan="3">Summe</td><td class="r">${eur(postenSum(v))}</td><td></td></tr></tfoot></table></div>`
+        ${k.map(x => `<tr><td>${fd(x.datum)}</td><td>${esc(x.text)}${x.kalender && x.datum ? ' <span title="im Kalender" aria-label="im Kalender">📅</span>' : ''}${belegeHTML(v, x)}${byLine(x)}</td><td class="sub">${esc(x.kategorie)}</td><td class="r">${eur(x.betrag)}${x.offen ? '<div><span class="badge" style="--c:var(--amber)">offen</span></div>' : ''}</td>
+          <td class="r" style="white-space:nowrap">${x.offen ? `<button class="btn small" data-act="cost-paid" data-id="${v.id}" data-cost="${x.id}" data-needs-write title="Als bezahlt markieren">Bezahlt ✓</button>` : ''}<button class="btn small ghost" data-act="edit-cost" data-id="${v.id}" data-cost="${x.id}" data-needs-write>Ändern</button></td></tr>`).join('')}
+      </tbody><tfoot><tr><td colspan="3">Summe bezahlt</td><td class="r">${eur(postenSum(v))}</td><td></td></tr>${postenOpen(v) ? `<tr><td colspan="3" style="font-weight:500">Noch offen</td><td class="r" style="font-weight:500;color:var(--amber)">${eur(postenOpen(v))}</td><td></td></tr>` : ''}</tfoot></table></div>`
       : `<div class="empty">Noch keine Kosten erfasst – Teile, Werkstatt, TÜV usw. hier eintragen.</div>`}
     </section>
     ${v.notizen ? `<section class="panel"><div class="panel-h"><h2>Notizen</h2></div><div class="panel-b notes">${esc(v.notizen)}</div></section>` : ''}
@@ -1112,6 +1120,7 @@ function renderAkte(v) {
       <div><span>Sonstige Kosten</span><span>${eur(postenSum(v))}</span></div>
       <div><span><b>Ausgegeben gesamt</b></span><b>${eur(costSum(v))}</b></div>
       ${repOpen(v) ? `<div class="sub"><span>Offene Reparaturen (erwartet)</span><span>${eur(repOpen(v))}</span></div>` : ''}
+      ${postenOpen(v) ? `<div class="sub"><span>Offene Kosten (noch nicht bezahlt)</span><span>${eur(postenOpen(v))}</span></div>` : ''}
       ${num(v.kaufpreis) ? `<div class="sub"><span>inkl. Anschaffung</span><span>${eur(costSum(v) + num(v.kaufpreis))}</span></div>` : ''}
       ${v.ausHandel ? `<div><span>Aus dem Handel behalten</span><span>${fd(v.behaltenAm)}</span></div><div><span>Investiert (Handelskasse)</span><span>${eur(has(v.handelInvest) ? v.handelInvest : investOf(v))}</span></div>` : ''}
       ${v.hu ? `<div><span>HU/TÜV bis</span><span class="${huSoon(v.hu) ? 'neg' : ''}">${fmtMonth(v.hu)}</span></div>` : ''}
@@ -1122,7 +1131,9 @@ function renderAkte(v) {
       <div><span>Kosten (Posten)</span><span>${eur(postenSum(v))}</span></div>
       <div><span>Reparaturen erledigt</span><span>${eur(repIst(v))}</span></div>
       <div><span><b>Investiert gesamt</b></span><b>${eur(investOf(v))}</b></div>
-      ${!isSold(v) && repOpen(v) ? `<div><span>Offene Reparaturen (erwartet)</span><span>${eur(repOpen(v))}</span></div><div><span>Prognose Investition</span><span>${eur(investOf(v) + repOpen(v))}</span></div>` : ''}
+      ${!isSold(v) && repOpen(v) ? `<div><span>Offene Reparaturen (erwartet)</span><span>${eur(repOpen(v))}</span></div>` : ''}
+      ${postenOpen(v) ? `<div><span>Offene Kosten (noch nicht bezahlt)</span><span>${eur(postenOpen(v))}</span></div>` : ''}
+      ${(!isSold(v) && repOpen(v)) || postenOpen(v) ? `<div><span>Prognose Investition</span><span>${eur(investOf(v) + (isSold(v) ? 0 : repOpen(v)) + postenOpen(v))}</span></div>` : ''}
       ${isSold(v)
         ? `<div><span>Verkaufspreis</span><span>${eur(v.verkaufspreis)}</span></div><div class="total"><span>Gewinn</span><span class="${signCls(profitOf(v))}">${eurS(profitOf(v))}</span></div>`
         : `<div><span>Zielpreis</span><span>${num(v.zielpreis) ? eur(v.zielpreis) : '–'}</span></div><div class="total"><span>Erwarteter Gewinn</span><span class="${num(v.zielpreis) ? signCls(expectedOf(v)) : ''}">${num(v.zielpreis) ? eurS(expectedOf(v)) : '–'}</span></div>`}
@@ -1150,7 +1161,7 @@ function repairsHTML(v) {
         ${r.kategorie ? `<span>${esc(r.kategorie)}</span>` : ''}
         <span>erwartet <em>${has(r.planKosten) ? eur(r.planKosten) : '–'}</em> · <em>${has(r.planStunden) ? fh(num(r.planStunden)) : '–'}</em></span>
         ${r.erledigt ? `<span>tatsächlich <em class="${dk > 0 ? 'over' : dk < 0 ? 'under' : ''}">${has(r.istKosten) ? eur(r.istKosten) : '–'}</em> · <em class="${dh > 0 ? 'over' : dh < 0 ? 'under' : ''}">${has(r.istStunden) ? fh(num(r.istStunden)) : '–'}</em>${r.datum ? ' · ' + fds(r.datum) : ''}</span>` : ''}
-      </div>${partsHTML(r)}${r.notiz ? `<div class="sub">${esc(r.notiz)}</div>` : ''}${byLine(r)}</div>
+      </div>${partsHTML(r, v)}${repAttHTML(v, r)}${r.notiz ? `<div class="sub">${esc(r.notiz)}</div>` : ''}${byLine(r)}</div>
       <div class="actions" style="flex-direction:column;align-items:flex-end;gap:2px">${!r.erledigt && !r.entfallen ? `<button class="btn small ghost" data-act="rep-skip" data-id="${v.id}" data-rep="${r.id}" data-needs-write title="Reparatur wird doch nicht gebraucht">Entfällt</button>` : ''}
       <button class="btn small ghost" data-act="edit-rep" data-id="${v.id}" data-rep="${r.id}" data-needs-write>Ändern</button></div></li>`;
   };
@@ -1483,7 +1494,8 @@ function renderFin() {
     <section class="panel"><div class="panel-h"><h2>Geplant</h2></div><div class="panel-b pl">
       <div><span>Fahrzeugkäufe (geplant)</span><span>${eur(f.fahrzeugPlan)}</span></div>
       <div><span>Werkzeug (Einkaufsliste)</span><span>${eur(f.werkzeugPlan)}</span></div>
-      <div class="total"><span>Kasse danach</span><span class="${signCls(f.kasse - f.fahrzeugPlan - f.werkzeugPlan)}">${eur(f.kasse - f.fahrzeugPlan - f.werkzeugPlan)}</span></div>
+      ${f.kostenOffen ? `<div><span>Offene Fahrzeugkosten</span><span>${eur(f.kostenOffen)}</span></div>` : ''}
+      <div class="total"><span>Kasse danach</span><span class="${signCls(f.kasse - f.fahrzeugPlan - f.werkzeugPlan - f.kostenOffen)}">${eur(f.kasse - f.fahrzeugPlan - f.werkzeugPlan - f.kostenOffen)}</span></div>
     </div></section>
     ${Object.keys(persons).length ? `<section class="panel"><div class="panel-h"><h2>Kapital je Person</h2></div><div class="panel-b pl">
       ${Object.entries(persons).map(([p, s]) => `<div><span>${esc(p)}</span><span>${eur(s)}</span></div>`).join('')}</div></section>` : ''}
@@ -1494,7 +1506,7 @@ function renderFin() {
 function ownCostsHTML() {
   const own = S.vehicles.filter(isOwn); if (!own.length) return '';
   const kp = v => num(v.kaufpreis);
-  const sK = own.reduce((a, v) => a + kp(v), 0), sR = own.reduce((a, v) => a + repIst(v), 0), sP = own.reduce((a, v) => a + postenSum(v), 0), sO = own.reduce((a, v) => a + repOpen(v), 0);
+  const sK = own.reduce((a, v) => a + kp(v), 0), sR = own.reduce((a, v) => a + repIst(v), 0), sP = own.reduce((a, v) => a + postenSum(v), 0), sO = own.reduce((a, v) => a + repOpen(v) + postenOpen(v), 0);
   return `<section class="panel"><div class="panel-h"><h2>Eigene Fahrzeuge</h2><span class="sub">Kauf, Reparaturen &amp; Kosten</span></div>
     <div class="scroll-x"><table><thead><tr><th>Fahrzeug</th><th class="r">Kauf</th><th class="r">Reparaturen</th><th class="r">Sonstiges</th><th class="r">Gesamt</th></tr></thead><tbody>
     ${own.map(v => `<tr data-open="${v.id}" style="cursor:pointer"><td><b>${esc(vName(v))}</b>${v.ausHandel ? '<div class="sub">aus dem Handel behalten</div>' : ''}${repOpen(v) ? `<div class="sub">offen ca. ${eur(repOpen(v))}</div>` : ''}</td><td class="r">${kp(v) ? eur(kp(v)) : '–'}</td><td class="r">${eur(repIst(v))}</td><td class="r">${eur(postenSum(v))}</td><td class="r"><b>${eur(kp(v) + costSum(v))}</b></td></tr>`).join('')}
@@ -1718,43 +1730,152 @@ function sellOwnForm(v) {
     }});
 }
 
-/* ---------- Teile mit Link ---------- */
+/* ---------- Teile mit Link, Stückzahl und Anhängen (Fotos/PDFs) ---------- */
 const safeUrl = u => { u = String(u || '').trim(); if (!u) return ''; if (/^www\./i.test(u)) u = 'https://' + u; return /^https?:\/\//i.test(u) ? u : ''; };
 const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return 'Link'; } };
 const partTotal = x => has(x.preis) ? (x.modus === 'gesamt' ? num(x.preis) : num(x.preis) * (num(x.menge) || 1)) : 0;
-const partRow = (t = {}) => `<div class="partrow"><input class="p-name" placeholder="Teil, z. B. Bremsbeläge" value="${esc(t.name || '')}" aria-label="Teil"><input class="p-link" type="url" inputmode="url" placeholder="Link (https://…)" value="${esc(t.link || '')}" aria-label="Link"><input class="p-menge" type="number" step="1" min="1" inputmode="numeric" placeholder="Stk" value="${esc(t.menge || 1)}" aria-label="Stückzahl"><input class="p-preis" type="number" step="0.01" min="0" inputmode="decimal" placeholder="€" value="${has(t.preis) ? esc(t.preis) : ''}" aria-label="Preis"><select class="p-modus" aria-label="Preis gilt für"><option value="stk"${t.modus !== 'gesamt' ? ' selected' : ''}>€ pro Stk</option><option value="gesamt"${t.modus === 'gesamt' ? ' selected' : ''}>€ gesamt</option></select><button type="button" class="btn small ghost p-del" aria-label="Teil entfernen">✕</button></div>`;
+const canAttach = () => S.assets && S.canWrite && !IN_WV;
+const partRow = (t = {}) => `<div class="partrow" data-pid="${esc(t.id || uid())}" data-att="${esc(JSON.stringify(t.anhaenge || []))}"><input class="p-name" placeholder="Teil, z. B. Bremsbeläge" value="${esc(t.name || '')}" aria-label="Teil"><input class="p-link" type="url" inputmode="url" placeholder="Link (https://…)" value="${esc(t.link || '')}" aria-label="Link"><input class="p-menge" type="number" step="1" min="1" inputmode="numeric" placeholder="Stk" value="${esc(t.menge || 1)}" aria-label="Stückzahl"><input class="p-preis" type="number" step="0.01" min="0" inputmode="decimal" placeholder="€" value="${has(t.preis) ? esc(t.preis) : ''}" aria-label="Preis"><select class="p-modus" aria-label="Preis gilt für"><option value="stk"${t.modus !== 'gesamt' ? ' selected' : ''}>€ pro Stk</option><option value="gesamt"${t.modus === 'gesamt' ? ' selected' : ''}>€ gesamt</option></select><button type="button" class="btn small ghost p-del" aria-label="Teil entfernen">✕</button>
+  <div class="p-att">${(t.anhaenge || []).map((a, i) => `<span class="p-chip" data-aid="${esc(a.id)}">${a.pdf ? '📄' : '🖼️'} ${esc(a.name || 'Anhang ' + (i + 1))}<button type="button" class="p-adel" aria-label="Anhang entfernen">✕</button></span>`).join('')}
+  ${canAttach() ? `<label class="btn small">📎 Foto / PDF<input type="file" class="file-ov p-file" accept="image/*,application/pdf,.pdf" multiple aria-label="Foto oder PDF zum Teil anhängen"></label><span class="sub p-sel"></span>` : ''}</div></div>`;
 function partsEditor(list) {
-  return `<fieldset class="parts"><legend>Teile</legend><p class="sub" style="margin:0">Je Teil: Bezeichnung, Link, Stückzahl, Preis – der Preis gilt wahlweise pro Stück oder für alle zusammen.</p><div id="partrows">${(list || []).map(partRow).join('')}</div>
+  return `<fieldset class="parts"><legend>Teile</legend><p class="sub" style="margin:0">Je Teil: Bezeichnung, Link, Stückzahl, Preis – der Preis gilt wahlweise pro Stück oder für alle zusammen. Fotos und PDFs (z. B. Teilenummer, Bestellung) über 📎 anhängen.</p><div id="partrows">${(list || []).map(partRow).join('')}</div>
     <div class="actions"><button type="button" class="btn small" id="addpart">${ICON.plus}Teil hinzufügen</button><span class="sub" id="partsum"></span></div></fieldset>`;
 }
 function bindParts() {
   const box = $('#partrows'), sum = () => { const s = [...box.querySelectorAll('.partrow')].reduce((a, row) => a + partTotal(rowPart(row)), 0); $('#partsum').textContent = s ? 'Summe Teile: ' + eur2(s) : ''; };
   $('#addpart').onclick = () => { box.insertAdjacentHTML('beforeend', partRow()); const n = box.lastElementChild.querySelector('.p-name'); n.focus(); sum(); };
-  box.onclick = e => { const d = e.target.closest('.p-del'); if (d) { d.closest('.partrow').remove(); sum(); } };
-  box.oninput = sum; box.onchange = sum; sum();
+  box.onclick = e => {
+    const d = e.target.closest('.p-del'); if (d) { d.closest('.partrow').remove(); sum(); return; }
+    const ad = e.target.closest('.p-adel'); if (ad) { const ch = ad.closest('.p-chip'); ch.classList.toggle('removed'); ad.textContent = ch.classList.contains('removed') ? '↺' : '✕'; }
+  };
+  box.oninput = sum;
+  box.onchange = e => { const f = e.target.closest('.p-file'); if (f) { const s = f.closest('.p-att').querySelector('.p-sel'); s.textContent = f.files.length ? `${f.files.length} neu – wird beim Speichern hochgeladen` : ''; } sum(); };
+  sum();
 }
 function rowPart(row) {
   const pv = row.querySelector('.p-preis').value;
   return {name: row.querySelector('.p-name').value.trim(), link: row.querySelector('.p-link').value.trim(),
     menge: Math.max(1, Math.round(num(row.querySelector('.p-menge').value)) || 1), preis: pv === '' ? '' : num(pv), modus: row.querySelector('.p-modus').value};
 }
+// liest die Teile aus dem Formular; neue Dateien und entfernte Anhänge merkt sich readParts.pending / readParts.removed
 function readParts() {
-  return [...document.querySelectorAll('#partrows .partrow')].map(row => ({id: uid(), ...rowPart(row)})).filter(t => t.name || t.link);
+  readParts.pending = []; readParts.removed = [];
+  return [...document.querySelectorAll('#partrows .partrow')].map(row => {
+    let att = []; try { att = JSON.parse(row.dataset.att || '[]'); } catch (e) {}
+    const gone = [...row.querySelectorAll('.p-chip.removed')].map(c => c.dataset.aid);
+    readParts.removed.push(...gone);
+    const p = {id: row.dataset.pid || uid(), ...rowPart(row), anhaenge: att.filter(a => !gone.includes(a.id))};
+    const fi = row.querySelector('.p-file'); const files = fi ? [...fi.files] : [];
+    if (files.length && (p.name || p.link)) readParts.pending.push({pid: p.id, name: p.name || 'Teil', files});
+    return p;
+  }).filter(t => t.name || t.link);
 }
+readParts.pending = []; readParts.removed = [];
+async function uploadPartFiles(vid, rid, pending) {
+  if (!S.assets || !pending.length) return;
+  const total = pending.reduce((a, p) => a + p.files.length, 0);
+  toast(`${total} Anhang${total === 1 ? '' : 'e'} zu Teilen wird hochgeladen …`);
+  const done = {};
+  for (const p of pending) {
+    let n = 0;
+    for (const f of p.files) {
+      try {
+        const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+        let b = f, type = 'application/pdf';
+        if (!pdf) { b = await shrinkDoc(f); type = /^image\/(jpeg|png|webp)$/.test(b.type) ? b.type : 'image/jpeg'; }
+        S.seq = S.seq || {}; const k = 'teil:' + p.pid; n = S.seq[k] = (S.seq[k] || 0) + 1;
+        const r = await S.assets.upload(b, {type, vid, name: String('Teil ' + p.name + (n > 1 ? ' ' + n : '')).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80)});
+        (done[p.pid] = done[p.pid] || []).push({id: r.id, pdf, name: f.name.replace(/\.[^.]+$/, '').slice(0, 60), at: new Date().toISOString()});
+      } catch (e) { toast('Anhang konnte nicht hochgeladen werden.'); }
+    }
+  }
+  const cnt = Object.values(done).reduce((a, l) => a + l.length, 0); if (!cnt) return;
+  const cur = S.vehicles.find(x => x.id === vid); if (!cur) return;
+  const rr = reps(cur).find(x => x.id === rid);
+  await Store.save('vehicles', {...cur, reparaturen: reps(cur).map(x => x.id !== rid ? x : {...x, teile: (x.teile || []).map(t => done[t.id] ? {...t, anhaenge: [...(t.anhaenge || []), ...done[t.id]]} : t)})},
+    `hat ${cnt === 1 ? 'einen Anhang' : cnt + ' Anhänge'} zu Teilen der Reparatur „${rr ? rr.titel : ''}“ bei ${vName(cur)} hinzugefügt`);
+  toast(cnt === 1 ? 'Anhang gespeichert' : cnt + ' Anhänge gespeichert');
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-partview]'); if (!t) return;
+  const v = S.vehicles.find(x => x.id === t.dataset.partview); if (!v) return;
+  const rr = reps(v).find(x => x.id === t.dataset.rep), pt = rr && (rr.teile || []).find(x => x.id === t.dataset.part); if (!pt) return;
+  const list = (pt.anhaenge || []).filter(a => !a.pdf);
+  S.lbCar = v.id; S.lbDocs = null; S.lbList = list; S.lbTitle = `Teil „${pt.name || ''}“`;
+  S.lbIndex = Math.max(0, list.findIndex(a => a.id === t.dataset.doc));
+  drawLightbox(); const lb = $('#lb'); if (!lb.open) lb.showModal();
+});
 const eur2 = n => new Intl.NumberFormat('de-DE', {style: 'currency', currency: 'EUR'}).format(Number(n) || 0);
-function partsHTML(r) {
+function partsHTML(r, v) {
   const t = r.teile || []; if (!t.length) return '';
   const s = t.reduce((a, x) => a + partTotal(x), 0);
   return `<div class="parts-list"><span class="sub">Teile${s ? ' (' + eur2(s) + ')' : ''}:</span>${t.map(x => { const u = safeUrl(x.link), label = esc(x.name || hostOf(u));
-    return `<span>${u ? `<a class="lnk" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>` : label}${(num(x.menge) || 1) > 1 ? ` <span class="sub">${x.menge} Stk${has(x.preis) ? (x.modus === 'gesamt' ? ` · ${eur2(partTotal(x))} gesamt` : ` à ${eur2(x.preis)} = ${eur2(partTotal(x))}`) : ''}</span>` : has(x.preis) ? ` <span class="sub">${eur2(partTotal(x))}</span>` : ''}</span>`; }).join('')}</div>`;
+    const att = (x.anhaenge || []).map((a, i) => a.pdf
+      ? `<a class="lnk" href="${esc(fileLink(a.id))}" target="_blank" rel="noopener" title="${esc(a.name || 'PDF')}">📄</a>`
+      : `<button type="button" class="lnk lnk-btn" data-partview="${v ? v.id : ''}" data-rep="${r.id}" data-part="${x.id}" data-doc="${a.id}" title="${esc(a.name || 'Foto')}">🖼️</button>`).join('');
+    return `<span>${u ? `<a class="lnk" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>` : label}${(num(x.menge) || 1) > 1 ? ` <span class="sub">${x.menge} Stk${has(x.preis) ? (x.modus === 'gesamt' ? ` · ${eur2(partTotal(x))} gesamt` : ` à ${eur2(x.preis)} = ${eur2(partTotal(x))}`) : ''}</span>` : has(x.preis) ? ` <span class="sub">${eur2(partTotal(x))}</span>` : ''}${att ? ' ' + att : ''}</span>`; }).join('')}</div>`;
 }
+
+/* ---------- Anhänge an der ganzen Reparatur (Fotos/PDFs) ---------- */
+function repAttEditor(list) {
+  const can = S.assets && S.canWrite && !IN_WV;
+  return `<fieldset class="parts"><legend>Anhänge zur Reparatur</legend><p class="sub" style="margin:0">z. B. Werkstattrechnung, Fotos vorher/nachher, Prüfbericht</p>
+    <div id="repattlist">${(list || []).map((b, i) => `<div class="beleg" data-bid="${b.id}"><span>${b.pdf ? '📄' : '🖼️'} ${esc(b.name || ('Anhang ' + (i + 1)))}</span><button type="button" class="btn small ghost b-del" aria-label="Anhang entfernen">✕</button></div>`).join('')}</div>
+    ${can ? `<label class="btn small" style="justify-self:start">📎 Foto / PDF anhängen<input type="file" id="repattfiles" accept="image/*,application/pdf,.pdf" multiple class="file-ov"></label><div class="sub" id="repattsel"></div>`
+      : '<p class="sub" style="margin:0">Anhängen ist hier nicht möglich.</p>'}</fieldset>`;
+}
+function bindRepAtt() {
+  const box = $('#repattlist');
+  if (box) box.onclick = e => { const d = e.target.closest('.b-del'); if (!d) return; const row = d.closest('.beleg'); row.classList.toggle('removed'); d.textContent = row.classList.contains('removed') ? '↺' : '✕'; };
+  const inp = $('#repattfiles');
+  if (inp) inp.onchange = () => { $('#repattsel').textContent = inp.files.length ? `${inp.files.length} Datei${inp.files.length === 1 ? '' : 'en'} ausgewählt – wird beim Speichern hochgeladen` : ''; };
+}
+async function uploadRepFiles(vid, rid, files) {
+  if (!S.assets || !files.length) return;
+  toast(`${files.length} Anhang${files.length === 1 ? '' : 'e'} zur Reparatur wird hochgeladen …`);
+  const added = [];
+  for (const f of files) {
+    try {
+      const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+      let b = f, type = 'application/pdf';
+      if (!pdf) { b = await shrinkDoc(f); type = /^image\/(jpeg|png|webp)$/.test(b.type) ? b.type : 'image/jpeg'; }
+      const cv = S.vehicles.find(x => x.id === vid) || {}, rr = reps(cv).find(x => x.id === rid) || {};
+      S.seq = S.seq || {}; const k = 'rep:' + rid, n = S.seq[k] = Math.max(S.seq[k] || 0, (rr.anhaenge || []).length) + 1;
+      const r = await S.assets.upload(b, {type, vid, name: String('Reparatur ' + (rr.titel || '') + (n > 1 ? ' ' + n : '')).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80)});
+      added.push({id: r.id, pdf, name: f.name.replace(/\.[^.]+$/, '').slice(0, 60), at: new Date().toISOString()});
+    } catch (e) { toast('Anhang konnte nicht hochgeladen werden.'); }
+  }
+  if (!added.length) return;
+  const cur = S.vehicles.find(x => x.id === vid); if (!cur) return;
+  const rr = reps(cur).find(x => x.id === rid);
+  await Store.save('vehicles', {...cur, reparaturen: reps(cur).map(x => x.id === rid ? {...x, anhaenge: [...(x.anhaenge || []), ...added]} : x)},
+    `hat ${added.length === 1 ? 'einen Anhang' : added.length + ' Anhänge'} zur Reparatur „${rr ? rr.titel : ''}“ bei ${vName(cur)} hinzugefügt`);
+  toast(added.length === 1 ? 'Anhang gespeichert' : added.length + ' Anhänge gespeichert');
+}
+function repAttHTML(v, r) {
+  const l = r.anhaenge || []; if (!l.length) return '';
+  const nr = i => l.length > 1 ? ' ' + (i + 1) : '';
+  return `<div class="belege">📎 ${l.map((a, i) => a.pdf
+    ? `<a class="lnk" href="${esc(fileLink(a.id))}" target="_blank" rel="noopener" title="${esc(a.name || 'PDF')}">Anhang${nr(i)} (PDF)</a>`
+    : `<button type="button" class="lnk lnk-btn" data-repview="${v.id}" data-rep="${r.id}" data-doc="${a.id}" title="${esc(a.name || 'Foto')}">Anhang${nr(i)} (Foto)</button>`).join('<span class="sub">·</span>')}</div>`;
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-repview]'); if (!t) return;
+  const v = S.vehicles.find(x => x.id === t.dataset.repview); if (!v) return;
+  const rr = reps(v).find(x => x.id === t.dataset.rep); if (!rr) return;
+  const list = (rr.anhaenge || []).filter(a => !a.pdf);
+  S.lbCar = v.id; S.lbDocs = null; S.lbList = list; S.lbTitle = `Reparatur „${rr.titel || ''}“`;
+  S.lbIndex = Math.max(0, list.findIndex(a => a.id === t.dataset.doc));
+  drawLightbox(); const lb = $('#lb'); if (!lb.open) lb.showModal();
+});
 
 function repForm(v, r, finish) {
   if (finish && r) r = {...r};
   const names = repCatalog().map(c => c.titel);
   const data = r ? {...r, status: r.entfallen ? 'entfallen' : r.erledigt ? 'erledigt' : 'offen'} : {status: 'offen', kategorie: 'Mechanik'};
   if (finish) { data.status = 'erledigt'; if (!data.datum) data.datum = todayISO(); if (!has(data.istKosten)) data.istKosten = data.planKosten; if (!has(data.istStunden)) data.istStunden = data.planStunden; }
-  openForm({title: finish ? 'Reparatur abschließen' : r ? 'Reparatur ändern' : 'Reparatur hinzufügen', data, after: partsEditor(r ? r.teile : []),
+  openForm({title: finish ? 'Reparatur abschließen' : r ? 'Reparatur ändern' : 'Reparatur hinzufügen', data, after: partsEditor(r ? r.teile : []) + repAttEditor(r ? r.anhaenge : []),
     extra: `<datalist id="repnames">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist><div class="hint" id="rephint"></div>`,
     groups: [
       {l:'Reparatur', f:[{k:'titel', l:'Bezeichnung', req:true, full:true, list:'repnames'}, {k:'kategorie', l:'Kategorie', t:'select', o:REP_CATS.map(x => [x, x])}, {k:'status', l:'Status', t:'select', o:[['offen', 'Offen'], ['erledigt', 'Erledigt'], ['entfallen', 'Nicht benötigt (entfällt)']]}]},
@@ -1764,14 +1885,20 @@ function repForm(v, r, finish) {
     onSave: d => {
       const cur = S.vehicles.find(x => x.id === v.id) || v;
       const item = {...(r || {id: uid()}), ...d, erledigt: d.status === 'erledigt', entfallen: d.status === 'entfallen', teile: readParts()}; delete item.status;
+      const rFiles = [...((($('#repattfiles') || {}).files) || [])], rGone = [...document.querySelectorAll('#repattlist .beleg.removed')].map(x => x.dataset.bid);
+      item.anhaenge = (item.anhaenge || []).filter(a => !rGone.includes(a.id));
       { const ps = item.teile.reduce((a, x) => a + partTotal(x), 0); if (!has(item.planKosten) && ps) item.planKosten = Math.round(ps * 100) / 100; }
       if (item.erledigt && !item.datum) item.datum = todayISO();
       const list = reps(cur).filter(x => !r || x.id !== r.id);
       const idx = r ? reps(cur).findIndex(x => x.id === r.id) : -1;
       if (idx >= 0) list.splice(idx, 0, item); else list.push(item);
       Store.save('vehicles', {...cur, reparaturen: list}); toast(item.erledigt ? 'Reparatur erledigt' : 'Gespeichert');
+      if (S.assets) readParts.removed.forEach(id => S.assets.delete(id).catch(() => {}));
+      if (readParts.pending.length) uploadPartFiles(v.id, item.id, readParts.pending);
+      if (S.assets) rGone.forEach(id => S.assets.delete(id).catch(() => {}));
+      if (rFiles.length) uploadRepFiles(v.id, item.id, rFiles);
     },
-    onDelete: r ? () => { const cur = S.vehicles.find(x => x.id === v.id) || v; Store.save('vehicles', {...cur, reparaturen: reps(cur).filter(x => x.id !== r.id)}); toast('Gelöscht'); } : null});
+    onDelete: r ? () => { const cur = S.vehicles.find(x => x.id === v.id) || v; Store.save('vehicles', {...cur, reparaturen: reps(cur).filter(x => x.id !== r.id)}); if (S.assets) [...(r.anhaenge || []), ...(r.teile || []).flatMap(t => t.anhaenge || [])].forEach(a => S.assets.delete(a.id).catch(() => {})); toast('Gelöscht'); } : null});
   const ti = $('#f_titel'), pk = $('#f_planKosten'), ph = $('#f_planStunden'), hint = $('#rephint');
   const auto = el => el.value === '' || el.dataset.auto === '1';
   [pk, ph].forEach(el => el.addEventListener('input', () => { el.dataset.auto = '0'; }));
@@ -1788,6 +1915,7 @@ function repForm(v, r, finish) {
   };
   ti.addEventListener('input', upd); ti.addEventListener('change', upd); upd();
   bindParts();
+  bindRepAtt();
 }
 
 /* ---------- Rechnungen an Kostenposten (Fotos & PDFs) ---------- */
@@ -1847,13 +1975,13 @@ document.addEventListener('click', e => {
   drawLightbox(); const lb = $('#lb'); if (!lb.open) lb.showModal();
 });
 function costForm(v, c) {
-  openForm({title: c ? 'Kosten ändern' : 'Kosten erfassen', data: c || {datum: todayISO(), kategorie: 'Teile'}, after: belegeEditor(c ? c.belege : []),
-    groups: [{f:[{k:'text', l:'Posten', req:true, full:true}, {k:'kategorie', l:'Kategorie', t:'select', o:COST_CATS.map(x => [x, x])}, {k:'betrag', l:'Betrag', t:'eur', req:true}, {k:'datum', l:'Datum', t:'date'}, {k:'kalender', l:'Datum im Kalender anzeigen (mit der Bezeichnung des Postens)', t:'check', full:true}]}],
+  openForm({title: c ? 'Kosten ändern' : 'Kosten erfassen', data: c ? {...c, zahlung: c.offen ? 'offen' : 'bezahlt'} : {datum: todayISO(), kategorie: 'Teile', zahlung: 'bezahlt'}, after: belegeEditor(c ? c.belege : []),
+    groups: [{f:[{k:'text', l:'Posten', req:true, full:true}, {k:'kategorie', l:'Kategorie', t:'select', o:COST_CATS.map(x => [x, x])}, {k:'betrag', l:'Betrag', t:'eur', req:true}, {k:'datum', l:'Datum', t:'date'}, {k:'zahlung', l:'Zahlung', t:'select', o:[['bezahlt', 'Bezahlt'], ['offen', 'Offen / erwartet']]}, {k:'kalender', l:'Datum im Kalender anzeigen (mit der Bezeichnung des Postens)', t:'check', full:true}]}],
     onSave: d => {
       const files = [...((($('#belegfiles') || {}).files) || [])];
       const removed = [...document.querySelectorAll('#beleglist .beleg.removed')].map(x => x.dataset.bid);
       v = S.vehicles.find(x => x.id === v.id) || v;
-      const item = {...(c || {id: uid()}), ...d};
+      const item = {...(c || {id: uid()}), ...d, offen: d.zahlung === 'offen'}; delete item.zahlung;
       item.belege = (item.belege || []).filter(b => !removed.includes(b.id));
       const kosten = (v.kosten || []).filter(x => !c || x.id !== c.id);
       kosten.push(item);
@@ -1866,6 +1994,10 @@ function costForm(v, c) {
     },
     onDelete: c ? () => { v = S.vehicles.find(x => x.id === v.id) || v; Store.save('vehicles', {...v, kosten: (v.kosten || []).filter(x => x.id !== c.id)}); if (S.assets) (c.belege || []).forEach(b => S.assets.delete(b.id).catch(() => {})); toast('Gelöscht'); } : null});
   bindBelegEditor();
+  // Vorschlag: Datum in der Zukunft → „offen“, bis man es selbst ändert
+  const fd0 = $('#f_datum'), fz = $('#f_zahlung'); let touched = !!c;
+  if (fz) fz.addEventListener('change', () => { touched = true; });
+  if (fd0 && fz) fd0.addEventListener('change', () => { if (!touched) fz.value = fd0.value > todayISO() ? 'offen' : 'bezahlt'; });
 }
 function entryForm(e) {
   const persons = [...new Set(S.entries.map(x => x.person).filter(Boolean))];
@@ -1906,7 +2038,7 @@ document.addEventListener('click', e => {
       Store.save('vehicles', {...cur, art: 'eigen', ausHandel: isBought(cur), handelInvest: isBought(cur) ? investOf(cur) : '', behaltenAm: todayISO()}, `hat ${vName(cur)} behalten (jetzt eigenes Fahrzeug)`); toast('Zu eigenen Fahrzeugen verschoben');
     });
     case 'edit-car': return carForm(v);
-    case 'del-car': return confirmBox('Fahrzeugakte löschen?').then(ok => { if (ok) { if (S.assets && v) [...imgs(v), ...docsOf(v), ...(v.kosten || []).flatMap(k => k.belege || [])].forEach(b => S.assets.delete(b.id).catch(() => {})); Store.remove('vehicles', id); go('fahrzeuge'); toast('Gelöscht'); } });
+    case 'del-car': return confirmBox('Fahrzeugakte löschen?').then(ok => { if (ok) { if (S.assets && v) [...imgs(v), ...docsOf(v), ...(v.kosten || []).flatMap(k => k.belege || []), ...reps(v).flatMap(r => [...(r.anhaenge || []), ...(r.teile || []).flatMap(t => t.anhaenge || [])])].forEach(b => S.assets.delete(b.id).catch(() => {})); Store.remove('vehicles', id); go('fahrzeuge'); toast('Gelöscht'); } });
     case 'new-cost': return costForm(v);
     case 'new-rep': return repForm(v);
     case 'edit-rep': return repForm(v, reps(v).find(r => r.id === t.dataset.rep));
@@ -1925,6 +2057,8 @@ document.addEventListener('click', e => {
       if (S.assets) S.assets.delete(t.dataset.doc).catch(() => {}); toast('Dokument gelöscht');
     });
     case 'edit-cost': return costForm(v, (v.kosten || []).find(c => c.id === t.dataset.cost));
+    case 'cost-paid': { const k = (v.kosten || []).find(c => c.id === t.dataset.cost); if (!k) return;
+      Store.save('vehicles', {...v, kosten: (v.kosten || []).map(c => c.id === k.id ? {...c, offen: false, bezahltAm: todayISO()} : c)}, `hat „${k.text}“ (${eur(k.betrag)}) bei ${vName(v)} als bezahlt markiert`); return toast('Als bezahlt markiert'); }
     case 'new-entry': return entryForm();
     case 'edit-entry': return entryForm(S.entries.find(x => x.id === id));
     case 'new-tool': return toolForm();
