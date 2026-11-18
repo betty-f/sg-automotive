@@ -1750,7 +1750,7 @@ function bindParts() {
     const ad = e.target.closest('.p-adel'); if (ad) { const ch = ad.closest('.p-chip'); ch.classList.toggle('removed'); ad.textContent = ch.classList.contains('removed') ? '↺' : '✕'; }
   };
   box.oninput = sum;
-  box.onchange = e => { const f = e.target.closest('.p-file'); if (f) { const s = f.closest('.p-att').querySelector('.p-sel'); s.textContent = f.files.length ? `${f.files.length} neu – wird beim Speichern hochgeladen` : ''; } sum(); };
+  box.onchange = e => { const f = e.target.closest('.p-file'); if (f) { f._acc = [...(f._acc || []), ...f.files]; f.value = ''; const s = f.closest('.p-att').querySelector('.p-sel'); s.textContent = f._acc.length ? `${f._acc.length} neu – weitere durch erneutes Tippen; Upload beim Speichern` : ''; } sum(); };
   sum();
 }
 function rowPart(row) {
@@ -1766,7 +1766,7 @@ function readParts() {
     const gone = [...row.querySelectorAll('.p-chip.removed')].map(c => c.dataset.aid);
     readParts.removed.push(...gone);
     const p = {id: row.dataset.pid || uid(), ...rowPart(row), anhaenge: att.filter(a => !gone.includes(a.id))};
-    const fi = row.querySelector('.p-file'); const files = fi ? [...fi.files] : [];
+    const fi = row.querySelector('.p-file'); const files = fi ? [...(fi._acc || [])] : [];
     if (files.length && (p.name || p.link)) readParts.pending.push({pid: p.id, name: p.name || 'Teil', files});
     return p;
   }).filter(t => t.name || t.link);
@@ -1829,7 +1829,7 @@ function bindRepAtt() {
   const box = $('#repattlist');
   if (box) box.onclick = e => { const d = e.target.closest('.b-del'); if (!d) return; const row = d.closest('.beleg'); row.classList.toggle('removed'); d.textContent = row.classList.contains('removed') ? '↺' : '✕'; };
   const inp = $('#repattfiles');
-  if (inp) inp.onchange = () => { $('#repattsel').textContent = inp.files.length ? `${inp.files.length} Datei${inp.files.length === 1 ? '' : 'en'} ausgewählt – wird beim Speichern hochgeladen` : ''; };
+  if (inp) inp.onchange = () => { inp._acc = [...(inp._acc || []), ...inp.files]; inp.value = ''; const n = inp._acc.length; $('#repattsel').textContent = n ? `${n} Datei${n === 1 ? '' : 'en'} ausgewählt – weitere Seiten durch erneutes Tippen hinzufügen; Upload beim Speichern` : ''; };
 }
 async function uploadRepFiles(vid, rid, files) {
   if (!S.assets || !files.length) return;
@@ -1885,7 +1885,7 @@ function repForm(v, r, finish) {
     onSave: d => {
       const cur = S.vehicles.find(x => x.id === v.id) || v;
       const item = {...(r || {id: uid()}), ...d, erledigt: d.status === 'erledigt', entfallen: d.status === 'entfallen', teile: readParts()}; delete item.status;
-      const rFiles = [...((($('#repattfiles') || {}).files) || [])], rGone = [...document.querySelectorAll('#repattlist .beleg.removed')].map(x => x.dataset.bid);
+      const rFiles = [...(($('#repattfiles') || {})._acc || [])], rGone = [...document.querySelectorAll('#repattlist .beleg.removed')].map(x => x.dataset.bid);
       item.anhaenge = (item.anhaenge || []).filter(a => !rGone.includes(a.id));
       { const ps = item.teile.reduce((a, x) => a + partTotal(x), 0); if (!has(item.planKosten) && ps) item.planKosten = Math.round(ps * 100) / 100; }
       if (item.erledigt && !item.datum) item.datum = todayISO();
@@ -1940,7 +1940,7 @@ function bindBelegEditor() {
   const box = $('#beleglist');
   if (box) box.onclick = e => { const d = e.target.closest('.b-del'); if (!d) return; const row = d.closest('.beleg'); row.classList.toggle('removed'); d.textContent = row.classList.contains('removed') ? '↺' : '✕'; };
   const inp = $('#belegfiles');
-  if (inp) inp.onchange = () => { $('#belegsel').textContent = inp.files.length ? `${inp.files.length} Datei${inp.files.length === 1 ? '' : 'en'} ausgewählt – wird beim Speichern hochgeladen` : ''; };
+  if (inp) inp.onchange = () => { inp._acc = [...(inp._acc || []), ...inp.files]; inp.value = ''; const n = inp._acc.length; $('#belegsel').textContent = n ? `${n} Datei${n === 1 ? '' : 'en'} ausgewählt – weitere Seiten durch erneutes Tippen hinzufügen; Upload beim Speichern` : ''; };
 }
 async function uploadBelege(vid, cid, files) {
   if (!files.length || !S.assets) return;
@@ -1978,7 +1978,7 @@ function costForm(v, c) {
   openForm({title: c ? 'Kosten ändern' : 'Kosten erfassen', data: c ? {...c, zahlung: c.offen ? 'offen' : 'bezahlt'} : {datum: todayISO(), kategorie: 'Teile', zahlung: 'bezahlt'}, after: belegeEditor(c ? c.belege : []),
     groups: [{f:[{k:'text', l:'Posten', req:true, full:true}, {k:'kategorie', l:'Kategorie', t:'select', o:COST_CATS.map(x => [x, x])}, {k:'betrag', l:'Betrag', t:'eur', req:true}, {k:'datum', l:'Datum', t:'date'}, {k:'zahlung', l:'Zahlung', t:'select', o:[['bezahlt', 'Bezahlt'], ['offen', 'Offen / erwartet']]}, {k:'kalender', l:'Datum im Kalender anzeigen (mit der Bezeichnung des Postens)', t:'check', full:true}]}],
     onSave: d => {
-      const files = [...((($('#belegfiles') || {}).files) || [])];
+      const files = [...(($('#belegfiles') || {})._acc || [])];
       const removed = [...document.querySelectorAll('#beleglist .beleg.removed')].map(x => x.dataset.bid);
       v = S.vehicles.find(x => x.id === v.id) || v;
       const item = {...(c || {id: uid()}), ...d, offen: d.zahlung === 'offen'}; delete item.zahlung;
