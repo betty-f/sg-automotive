@@ -239,6 +239,11 @@ a.btn{text-decoration:none}
 /* Phase abgeschlossen */
 .phase-chk{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:14px;color:var(--text);cursor:pointer;font-weight:500}
 .phase-chk input{width:18px;height:18px;padding:0;margin:0;accent-color:var(--green);flex:none}
+/* Rechnungen */
+.belege{font-size:13px;margin-top:3px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+.lnk-btn{background:none;border:0;padding:0;cursor:pointer;font:inherit;font-size:13px}
+.beleg{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--line);font-size:14px}
+.beleg.removed span{text-decoration:line-through;opacity:.5}
 /* Reparaturen */
 .rep-list .rep{align-items:flex-start}
 .chk{width:28px;height:28px;border-radius:8px;border:2px solid var(--muted);background:none;color:transparent;display:grid;place-items:center;cursor:pointer;flex:none;margin-top:1px;font-weight:700}
@@ -1085,7 +1090,7 @@ function renderAkte(v) {
     ${repairsHTML(v)}
     <section class="panel"><div class="panel-h"><h2>Kosten &amp; Investitionen</h2><span class="sub">${k.length} Posten</span></div>
       ${k.length ? `<div class="scroll-x"><table><thead><tr><th>Datum</th><th>Posten</th><th>Kategorie</th><th class="r">Betrag</th><th></th></tr></thead><tbody>
-        ${k.map(x => `<tr><td>${fd(x.datum)}</td><td>${esc(x.text)}${x.kalender && x.datum ? ' <span title="im Kalender" aria-label="im Kalender">📅</span>' : ''}${byLine(x)}</td><td class="sub">${esc(x.kategorie)}</td><td class="r">${eur(x.betrag)}</td>
+        ${k.map(x => `<tr><td>${fd(x.datum)}</td><td>${esc(x.text)}${x.kalender && x.datum ? ' <span title="im Kalender" aria-label="im Kalender">📅</span>' : ''}${belegeHTML(v, x)}${byLine(x)}</td><td class="sub">${esc(x.kategorie)}</td><td class="r">${eur(x.betrag)}</td>
           <td class="r"><button class="btn small ghost" data-act="edit-cost" data-id="${v.id}" data-cost="${x.id}" data-needs-write>Ändern</button></td></tr>`).join('')}
       </tbody><tfoot><tr><td colspan="3">Summe</td><td class="r">${eur(postenSum(v))}</td><td></td></tr></tfoot></table></div>`
       : `<div class="empty">Noch keine Kosten erfasst – Teile, Werkstatt, TÜV usw. hier eintragen.</div>`}
@@ -1280,16 +1285,16 @@ async function uploadImages(vid, files) {
 }
 
 function openLightbox(vid, i) {
-  S.lbCar = vid; S.lbIndex = i; S.lbDocs = null; drawLightbox();
+  S.lbCar = vid; S.lbIndex = i; S.lbDocs = null; S.lbList = null; drawLightbox();
   const lb = $('#lb'); if (!lb.open) lb.showModal();
 }
 function drawLightbox() {
   const v = S.vehicles.find(x => x.id === S.lbCar), lb = $('#lb');
-  const list = v ? (S.lbDocs ? docsOf(v, S.lbDocs).filter(d => !d.pdf) : imgs(v)) : [];
+  const list = v ? (S.lbList || (S.lbDocs ? docsOf(v, S.lbDocs).filter(d => !d.pdf) : imgs(v))) : [];
   if (!list.length) { if (lb.open) lb.close(); return; }
   S.lbIndex = (S.lbIndex + list.length) % list.length;
-  const b = list[S.lbIndex], can = S.canWrite && !S.lbDocs;
-  lb.innerHTML = `<div class="dlg-h"><h2>${esc(vName(v))}${S.lbDocs ? ' · ' + DOC_SHORT[S.lbDocs] : ''} <span style="color:#8B9AB0;font-size:15px;font-weight:500">${S.lbIndex + 1} / ${list.length}</span></h2><button type="button" class="btn small ghost" data-lb="close" aria-label="Schließen">✕</button></div>
+  const b = list[S.lbIndex], can = S.canWrite && !S.lbDocs && !S.lbList;
+  lb.innerHTML = `<div class="dlg-h"><h2>${esc(vName(v))}${S.lbDocs ? ' · ' + DOC_SHORT[S.lbDocs] : ''}${S.lbList && S.lbTitle ? ' · ' + esc(S.lbTitle) : ''} <span style="color:#8B9AB0;font-size:15px;font-weight:500">${S.lbIndex + 1} / ${list.length}</span></h2><button type="button" class="btn small ghost" data-lb="close" aria-label="Schließen">✕</button></div>
     <div class="lb-img"><img src="${blob(b.id)}" alt="${esc(vName(v))}" onerror="this.classList.add('broken')">
     ${list.length > 1 ? `<button class="lb-nav lb-prev" data-lb="prev" aria-label="Vorheriges Bild">${ICON.left}</button><button class="lb-nav lb-next" data-lb="next" aria-label="Nächstes Bild">${ICON.right}</button>` : ''}</div>
     <div class="dlg-f"><div>${can ? `<button class="btn danger small" data-lb="del">Bild löschen</button>` : ''}</div>
@@ -1299,7 +1304,7 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-docview]'); if (!t) return;
   const v = S.vehicles.find(x => x.id === t.dataset.docview); if (!v) return;
   const list = docsOf(v, t.dataset.typ).filter(d => !d.pdf);
-  S.lbCar = v.id; S.lbDocs = t.dataset.typ; S.lbIndex = Math.max(0, list.findIndex(d => d.id === t.dataset.doc));
+  S.lbCar = v.id; S.lbDocs = t.dataset.typ; S.lbList = null; S.lbIndex = Math.max(0, list.findIndex(d => d.id === t.dataset.doc));
   drawLightbox(); const lb = $('#lb'); if (!lb.open) lb.showModal();
 });
 $('#lb').addEventListener('click', async e => {
@@ -1443,6 +1448,7 @@ function renderFin() {
         <td class="r ${r != null ? signCls(r) : ''}">${r == null ? '–' : (sold ? '' : '<span class="sub">ca. </span>') + eurS(r)}</td></tr>`; }).join('')}
       </tbody></table></div>` : `<div class="empty">Noch kein Fahrzeug gekauft.</div>`}
     </section>
+    ${ownCostsHTML()}
     <section class="panel"><div class="panel-h"><h2>Buchungen</h2><span class="sub">Einlagen, Entnahmen, sonstige Kosten</span></div>
       ${entries.length ? `<div class="scroll-x"><table><thead><tr><th>Datum</th><th>Beschreibung</th><th>Art</th><th class="r">Betrag</th><th></th></tr></thead><tbody>
       ${entries.map(e => { const plus = e.typ === 'einlage' || e.typ === 'einnahme';
@@ -1465,6 +1471,7 @@ function renderFin() {
       <div class="total"><span>Kassenstand</span><span class="${signCls(f.kasse)}">${eur(f.kasse)}</span></div>
 
     </div></section>
+    ${S.vehicles.some(isOwn) ? totalsHTML(f) : ''}
     <section class="panel"><div class="panel-h"><h2>Geplant</h2></div><div class="panel-b pl">
       <div><span>Fahrzeugkäufe (geplant)</span><span>${eur(f.fahrzeugPlan)}</span></div>
       <div><span>Werkzeug (Einkaufsliste)</span><span>${eur(f.werkzeugPlan)}</span></div>
@@ -1478,11 +1485,29 @@ function renderFin() {
 
 function ownCostsHTML() {
   const own = S.vehicles.filter(isOwn); if (!own.length) return '';
-  const sR = own.reduce((a, v) => a + repIst(v), 0), sP = own.reduce((a, v) => a + postenSum(v), 0), sO = own.reduce((a, v) => a + repOpen(v), 0);
-  return `<section class="panel"><div class="panel-h"><h2>Eigene Fahrzeuge</h2><span class="sub">Reparaturen &amp; Kosten</span></div>
-    <div class="scroll-x"><table><thead><tr><th>Fahrzeug</th><th class="r">Reparaturen</th><th class="r">Sonstiges</th><th class="r">Gesamt</th></tr></thead><tbody>
-    ${own.map(v => `<tr data-open="${v.id}" style="cursor:pointer"><td><b>${esc(vName(v))}</b>${repOpen(v) ? `<div class="sub">offen ca. ${eur(repOpen(v))}</div>` : ''}</td><td class="r">${eur(repIst(v))}</td><td class="r">${eur(postenSum(v))}</td><td class="r"><b>${eur(costSum(v))}</b></td></tr>`).join('')}
-    </tbody><tfoot><tr><td>Summe${sO ? `<div class="sub" style="font-weight:400">offen ca. ${eur(sO)}</div>` : ''}</td><td class="r">${eur(sR)}</td><td class="r">${eur(sP)}</td><td class="r">${eur(sR + sP)}</td></tr></tfoot></table></div></section>`;
+  const kp = v => num(v.kaufpreis);
+  const sK = own.reduce((a, v) => a + kp(v), 0), sR = own.reduce((a, v) => a + repIst(v), 0), sP = own.reduce((a, v) => a + postenSum(v), 0), sO = own.reduce((a, v) => a + repOpen(v), 0);
+  return `<section class="panel"><div class="panel-h"><h2>Eigene Fahrzeuge</h2><span class="sub">Kauf, Reparaturen &amp; Kosten</span></div>
+    <div class="scroll-x"><table><thead><tr><th>Fahrzeug</th><th class="r">Kauf</th><th class="r">Reparaturen</th><th class="r">Sonstiges</th><th class="r">Gesamt</th></tr></thead><tbody>
+    ${own.map(v => `<tr data-open="${v.id}" style="cursor:pointer"><td><b>${esc(vName(v))}</b>${v.ausHandel ? '<div class="sub">aus dem Handel behalten</div>' : ''}${repOpen(v) ? `<div class="sub">offen ca. ${eur(repOpen(v))}</div>` : ''}</td><td class="r">${kp(v) ? eur(kp(v)) : '–'}</td><td class="r">${eur(repIst(v))}</td><td class="r">${eur(postenSum(v))}</td><td class="r"><b>${eur(kp(v) + costSum(v))}</b></td></tr>`).join('')}
+    </tbody><tfoot><tr><td>Summe${sO ? `<div class="sub" style="font-weight:400">offen ca. ${eur(sO)}</div>` : ''}</td><td class="r">${eur(sK)}</td><td class="r">${eur(sR)}</td><td class="r">${eur(sP)}</td><td class="r">${eur(sK + sR + sP)}</td></tr></tfoot></table></div></section>`;
+}
+// Gesamtübersicht: Handel + eigene Fahrzeuge (bei behaltenen Fahrzeugen zählt der Anteil aus der Handelskasse nur einmal)
+function totalsHTML(f) {
+  const own = S.vehicles.filter(isOwn);
+  const ownPart = v => v.ausHandel ? Math.max(0, investOf(v) - (has(v.handelInvest) ? num(v.handelInvest) : investOf(v))) : num(v.kaufpreis) + costSum(v);
+  const oK = own.filter(v => !v.ausHandel).reduce((a, v) => a + num(v.kaufpreis), 0);
+  const oC = own.reduce((a, v) => a + ownPart(v), 0) - oK;
+  const hT = f.kaufSum + f.kostenSum + f.werkzeug + f.ausgaben + f.behaltenSum;
+  return `<section class="panel"><div class="panel-h"><h2>Gesamt inkl. eigener Fahrzeuge</h2></div><div class="panel-b pl">
+    <div><span>Handel: Einkauf, Kosten, Werkzeug, Ausgaben</span><span>${eur(hT)}</span></div>
+    <div><span>Eigene Fahrzeuge: Kauf</span><span>${eur(oK)}</span></div>
+    <div><span>Eigene Fahrzeuge: Reparaturen &amp; Kosten</span><span>${eur(oC)}</span></div>
+    <div class="total"><span>Ausgaben gesamt</span><span>${eur(hT + oK + oC)}</span></div>
+    <div><span>Einnahmen (Verkäufe &amp; sonstige)</span><span class="pos">+${eur(f.erloese + f.einnahmen)}</span></div>
+    <div class="total"><span>Saldo gesamt</span><span class="${signCls(f.erloese + f.einnahmen - hT - oK - oC)}">${eur(f.erloese + f.einnahmen - hT - oK - oC)}</span></div>
+    <p class="sub" style="margin:6px 0 0">Der Kassenstand oben betrifft nur den Handel. Hier sind die eigenen Fahrzeuge zusätzlich eingerechnet.</p>
+  </div></section>`;
 }
 
 function renderTools() {
@@ -1757,18 +1782,82 @@ function repForm(v, r, finish) {
   bindParts();
 }
 
+/* ---------- Rechnungen an Kostenposten (Fotos & PDFs) ---------- */
+const cleanName0 = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').trim().slice(0, 80);
+const fileLink = id => typeof driveView === 'function' ? driveView(id) : blob(id);
+function belegeHTML(v, x) {
+  const l = x.belege || [], up = S.uploading['beleg:' + x.id] || 0;
+  if (!l.length && !up) return '';
+  const nr = i => l.length > 1 ? ' ' + (i + 1) : '';
+  return `<div class="belege">📎 ${l.map((b, i) => b.pdf
+    ? `<a class="lnk" href="${esc(fileLink(b.id))}" target="_blank" rel="noopener">Rechnung${nr(i)} (PDF)</a>`
+    : `<button type="button" class="lnk lnk-btn" data-belegview="${v.id}" data-cost="${x.id}" data-doc="${b.id}">Rechnung${nr(i)} (Foto)</button>`).join('<span class="sub">·</span>')}${up ? ` <span class="sub">lädt ${up} …</span>` : ''}</div>`;
+}
+function belegeEditor(list) {
+  const can = S.assets && S.canWrite && !IN_WV;
+  return `<fieldset class="parts"><legend>Rechnungen</legend>
+    <div id="beleglist">${(list || []).map((b, i) => `<div class="beleg" data-bid="${b.id}"><span>${b.pdf ? '📄' : '🖼️'} ${esc(b.name || ('Rechnung ' + (i + 1)))}</span><button type="button" class="btn small ghost b-del" aria-label="Rechnung entfernen">✕</button></div>`).join('')}</div>
+    ${can ? `<label class="btn small" style="justify-self:start">${ICON.plus}Foto / PDF anhängen<input type="file" id="belegfiles" accept="image/*,application/pdf,.pdf" multiple class="file-ov"></label><div class="sub" id="belegsel"></div>`
+      : '<p class="sub" style="margin:0">Anhängen ist hier nicht möglich.</p>'}</fieldset>`;
+}
+function bindBelegEditor() {
+  const box = $('#beleglist');
+  if (box) box.onclick = e => { const d = e.target.closest('.b-del'); if (!d) return; const row = d.closest('.beleg'); row.classList.toggle('removed'); d.textContent = row.classList.contains('removed') ? '↺' : '✕'; };
+  const inp = $('#belegfiles');
+  if (inp) inp.onchange = () => { $('#belegsel').textContent = inp.files.length ? `${inp.files.length} Datei${inp.files.length === 1 ? '' : 'en'} ausgewählt – wird beim Speichern hochgeladen` : ''; };
+}
+async function uploadBelege(vid, cid, files) {
+  if (!files.length || !S.assets) return;
+  const key = 'beleg:' + cid; S.uploading[key] = (S.uploading[key] || 0) + files.length; render();
+  const added = [];
+  for (const f of files) {
+    try {
+      const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+      let b = f, type = 'application/pdf';
+      if (!pdf) { b = await shrinkDoc(f); type = /^image\/(jpeg|png|webp)$/.test(b.type) ? b.type : 'image/jpeg'; }
+      const cv = S.vehicles.find(x => x.id === vid) || {}, ck = (cv.kosten || []).find(k => k.id === cid) || {};
+      S.seq = S.seq || {}; const n = S.seq[key] = Math.max(S.seq[key] || 0, (ck.belege || []).length) + 1;
+      const r = await S.assets.upload(b, {type, vid, name: cleanName0('Rechnung ' + (ck.text || 'Kosten') + (n > 1 ? ' ' + n : ''))});
+      added.push({id: r.id, pdf, name: f.name.replace(/\.[^.]+$/, '').slice(0, 60), at: new Date().toISOString()});
+    } catch (e) { toast(e && e.code === 'too_large' ? 'Datei zu groß (max. 20 MB).' : 'Rechnung konnte nicht hochgeladen werden.'); }
+    S.uploading[key]--; render();
+  }
+  if (!added.length) return;
+  const cur = S.vehicles.find(x => x.id === vid); if (!cur) return;
+  const ck = (cur.kosten || []).find(k => k.id === cid);
+  await Store.save('vehicles', {...cur, kosten: (cur.kosten || []).map(k => k.id === cid ? {...k, belege: [...(k.belege || []), ...added]} : k)},
+    `hat ${added.length === 1 ? 'eine Rechnung' : added.length + ' Rechnungen'} zu „${ck ? ck.text : 'Kosten'}“ bei ${vName(cur)} angehängt`);
+  toast(added.length === 1 ? 'Rechnung gespeichert' : added.length + ' Rechnungen gespeichert');
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-belegview]'); if (!t) return;
+  const v = S.vehicles.find(x => x.id === t.dataset.belegview); if (!v) return;
+  const ck = (v.kosten || []).find(k => k.id === t.dataset.cost); if (!ck) return;
+  const list = (ck.belege || []).filter(b => !b.pdf);
+  S.lbCar = v.id; S.lbDocs = null; S.lbList = list; S.lbTitle = `Rechnung „${ck.text || ''}“`;
+  S.lbIndex = Math.max(0, list.findIndex(b => b.id === t.dataset.doc));
+  drawLightbox(); const lb = $('#lb'); if (!lb.open) lb.showModal();
+});
 function costForm(v, c) {
-  openForm({title: c ? 'Kosten ändern' : 'Kosten erfassen', data: c || {datum: todayISO(), kategorie: 'Teile'},
+  openForm({title: c ? 'Kosten ändern' : 'Kosten erfassen', data: c || {datum: todayISO(), kategorie: 'Teile'}, after: belegeEditor(c ? c.belege : []),
     groups: [{f:[{k:'text', l:'Posten', req:true, full:true}, {k:'kategorie', l:'Kategorie', t:'select', o:COST_CATS.map(x => [x, x])}, {k:'betrag', l:'Betrag', t:'eur', req:true}, {k:'datum', l:'Datum', t:'date'}, {k:'kalender', l:'Datum im Kalender anzeigen (mit der Bezeichnung des Postens)', t:'check', full:true}]}],
     onSave: d => {
+      const files = [...((($('#belegfiles') || {}).files) || [])];
+      const removed = [...document.querySelectorAll('#beleglist .beleg.removed')].map(x => x.dataset.bid);
       v = S.vehicles.find(x => x.id === v.id) || v;
+      const item = {...(c || {id: uid()}), ...d};
+      item.belege = (item.belege || []).filter(b => !removed.includes(b.id));
       const kosten = (v.kosten || []).filter(x => !c || x.id !== c.id);
-      kosten.push({...(c || {id: uid()}), ...d});
+      kosten.push(item);
       const o = {...v, kosten};
       if (d.datum && isTuevCost(d)) o.tuevTermin = d.datum; // TÜV/HU-Posten ↔ TÜV-Termin abgleichen
-      Store.save('vehicles', o); toast(d.datum && isTuevCost(d) ? 'Gespeichert – TÜV-Termin übernommen' : 'Gespeichert');
+      Store.save('vehicles', o);
+      toast(files.length ? 'Gespeichert – Rechnung wird hochgeladen …' : d.datum && isTuevCost(d) ? 'Gespeichert – TÜV-Termin übernommen' : 'Gespeichert');
+      if (S.assets) removed.forEach(id => S.assets.delete(id).catch(() => {}));
+      if (files.length) uploadBelege(v.id, item.id, files);
     },
-    onDelete: c ? () => { v = S.vehicles.find(x => x.id === v.id) || v; Store.save('vehicles', {...v, kosten: (v.kosten || []).filter(x => x.id !== c.id)}); toast('Gelöscht'); } : null});
+    onDelete: c ? () => { v = S.vehicles.find(x => x.id === v.id) || v; Store.save('vehicles', {...v, kosten: (v.kosten || []).filter(x => x.id !== c.id)}); if (S.assets) (c.belege || []).forEach(b => S.assets.delete(b.id).catch(() => {})); toast('Gelöscht'); } : null});
+  bindBelegEditor();
 }
 function entryForm(e) {
   const persons = [...new Set(S.entries.map(x => x.person).filter(Boolean))];
@@ -1809,7 +1898,7 @@ document.addEventListener('click', e => {
       Store.save('vehicles', {...cur, art: 'eigen', ausHandel: isBought(cur), handelInvest: isBought(cur) ? investOf(cur) : '', behaltenAm: todayISO()}, `hat ${vName(cur)} behalten (jetzt eigenes Fahrzeug)`); toast('Zu eigenen Fahrzeugen verschoben');
     });
     case 'edit-car': return carForm(v);
-    case 'del-car': return confirmBox('Fahrzeugakte löschen?').then(ok => { if (ok) { if (S.assets && v) [...imgs(v), ...docsOf(v)].forEach(b => S.assets.delete(b.id).catch(() => {})); Store.remove('vehicles', id); go('fahrzeuge'); toast('Gelöscht'); } });
+    case 'del-car': return confirmBox('Fahrzeugakte löschen?').then(ok => { if (ok) { if (S.assets && v) [...imgs(v), ...docsOf(v), ...(v.kosten || []).flatMap(k => k.belege || [])].forEach(b => S.assets.delete(b.id).catch(() => {})); Store.remove('vehicles', id); go('fahrzeuge'); toast('Gelöscht'); } });
     case 'new-cost': return costForm(v);
     case 'new-rep': return repForm(v);
     case 'edit-rep': return repForm(v, reps(v).find(r => r.id === t.dataset.rep));
