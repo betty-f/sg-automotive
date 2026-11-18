@@ -315,7 +315,10 @@ tfoot td{font-weight:700;border-top:2px solid var(--line)}
 .bar.ver{background:var(--st-verkauf);color:#1a1205}
 .bar.auf{background:#13B5A6;color:#04211e}
 .mark{position:absolute;top:50%;width:13px;height:13px;transform:translate(-50%,-50%) rotate(45deg);border:2px solid var(--surface);z-index:1}
-.mark.kauf{background:var(--text)} .mark.sold{background:var(--st-verkauft)} .mark.hu{background:var(--red)} .mark.rp{background:var(--st-reparatur);border-radius:50%;width:10px;height:10px;transform:translate(-50%,-50%)}
+.mark.kauf{background:var(--text)} .mark.sold{background:var(--st-verkauft)} .mark.hu{background:var(--red)} .mark.cost{background:#E05FB0}
+.mlabel.low{top:auto;bottom:3px}
+.mlabel{position:absolute;top:3px;transform:translateX(9px);font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap;pointer-events:none;z-index:2}
+ .mark.rp{background:var(--st-reparatur);border-radius:50%;width:10px;height:10px;transform:translate(-50%,-50%)}
 .plan-h .seg + .seg{margin-left:4px;padding-left:10px;border-left:1px solid var(--line)}
 .today{position:absolute;top:0;bottom:0;width:2px;background:var(--red);z-index:3;pointer-events:none}
 .today::after{content:"Heute";position:absolute;top:-2px;left:4px;font-size:11px;font-weight:700;color:var(--red)}
@@ -881,7 +884,7 @@ function events() {
     if (v.reparaturEnde && v.status !== 'verkauft' && v.status !== 'verkauf' && !repComplete(v)) ev.push({d:v.reparaturEnde, t:'Reparatur fertig', v});
     if (v.aufbereitungStart && v.status !== 'verkauft' && !aufComplete(v)) ev.push({d:v.aufbereitungStart, t:'Aufbereitung beginnt', v});
     if (v.aufbereitungEnde && v.status !== 'verkauft' && !aufComplete(v)) ev.push({d:v.aufbereitungEnde, t:'Aufbereitung fertig', v});
-    if (v.status !== 'verkauft') for (const d of tuevDates(v)) ev.push({d, t:'TÜV/HU', v});
+    if (v.status !== 'verkauft') for (const m of calMarks(v)) ev.push({d: m.d, t: m.l, v});
     if (v.verkaufStart && v.status !== 'verkauft') ev.push({d:v.verkaufStart, t:'Verkaufsstart', v});
     if (v.verkaufEnde && v.status !== 'verkauft') ev.push({d:v.verkaufEnde, t:'Verkauf bis', v});
   }
@@ -943,6 +946,17 @@ const TUEV_RX = /t[üu]v|\bhu\b|hauptuntersuchung/i;
 const tuevDates = v => [v.tuevTermin,
   ...(v.kosten || []).filter(k => k.datum && TUEV_RX.test((k.text || '') + ' ' + (k.kategorie || ''))).map(k => k.datum),
   ...reps(v).filter(r => r.datum && !r.entfallen && TUEV_RX.test((r.titel || '') + ' ' + (r.kategorie || ''))).map(r => r.datum)].filter(Boolean);
+// Kalendereinträge aus der Akte: TÜV/HU-Termin (mit dem Kostenposten „TÜV/HU“ abgeglichen) und Kostenposten mit Haken „im Kalender“
+const isTuevCost = k => TUEV_RX.test((k && k.text) || '');
+const tuevOf = v => v.tuevTermin || ((v.kosten || []).find(k => k.datum && isTuevCost(k)) || {}).datum || '';
+function calMarks(v) {
+  const out = [];
+  let tt = v.tuevTermin;
+  if (!tt) { const k = (v.kosten || []).find(k => k.datum && isTuevCost(k)); if (k) tt = k.datum; }
+  if (tt) out.push({d: tt, l: 'TÜV/HU', cls: 'hu'});
+  for (const k of (v.kosten || [])) if (k.kalender && k.datum && !(isTuevCost(k) && k.datum === tt)) out.push({d: k.datum, l: k.text || k.kategorie || 'Kosten', cls: 'cost'});
+  return out;
+}
 const repComplete = v => !!v.reparaturFertig || (reps(v).length > 0 && reps(v).every(r => r.erledigt || r.entfallen));
 const aufComplete = v => !!v.aufbereitungFertig;
 function phaseOf(v) {
@@ -1057,7 +1071,7 @@ function renderAkte(v) {
     <div class="actions"><button class="btn" data-act="edit-car" data-id="${v.id}" data-needs-write>Bearbeiten</button>${addBtn('new-cost','Kosten erfassen').replace('data-act="new-cost"', `data-act="new-cost" data-id="${v.id}"`)}</div></div>`;
   h += `<div class="grid2"><div class="stack">
     <section class="panel"><div class="panel-h"><h2>Fahrzeugdaten</h2></div><div class="panel-b"><dl class="facts">
-      ${[['Marke', v.marke], ['Modell', v.modell], ['Baujahr / EZ', v.baujahr], ['Kilometer', v.km ? Number(v.km).toLocaleString('de-DE') + ' km' : ''], ['Kraftstoff', v.kraftstoff], ['Leistung', (v.ps || v.kw) ? `${v.ps || Math.round(num(v.kw) / 0.73549875)} PS (${v.kw || Math.round(num(v.ps) * 0.73549875)} kW)` : ''], ['Hubraum', v.hubraum ? Number(v.hubraum).toLocaleString('de-DE') + ' cm³' : ''], ['Getriebe', v.getriebe], ['Vorbesitzer', has(v.vorbesitzer) ? String(v.vorbesitzer) : ''], ['Kennzeichen', v.kennzeichen], ['FIN', v.fin], ['Farbe', v.farbe], ['HU/TÜV bis', fmtMonth(v.hu)], ['TÜV/HU-Termin', v.tuevTermin ? fd(v.tuevTermin) : ''], ...(isOwn(v) ? [] : [['Verkäufer', v.verkaeufer], ['Adresse Verkäufer', v.verkaeuferAdresse], ['Käufer', v.kaeufer], ['Adresse Käufer', v.kaeuferAdresse]])]
+      ${[['Marke', v.marke], ['Modell', v.modell], ['Baujahr / EZ', v.baujahr], ['Kilometer', v.km ? Number(v.km).toLocaleString('de-DE') + ' km' : ''], ['Kraftstoff', v.kraftstoff], ['Leistung', (v.ps || v.kw) ? `${v.ps || Math.round(num(v.kw) / 0.73549875)} PS (${v.kw || Math.round(num(v.ps) * 0.73549875)} kW)` : ''], ['Hubraum', v.hubraum ? Number(v.hubraum).toLocaleString('de-DE') + ' cm³' : ''], ['Getriebe', v.getriebe], ['Vorbesitzer', has(v.vorbesitzer) ? String(v.vorbesitzer) : ''], ['Kennzeichen', v.kennzeichen], ['FIN', v.fin], ['Farbe', v.farbe], ['HU/TÜV bis', fmtMonth(v.hu)], ['TÜV/HU-Termin', tuevOf(v) ? fd(tuevOf(v)) : ''], ...(isOwn(v) ? [] : [['Verkäufer', v.verkaeufer], ['Adresse Verkäufer', v.verkaeuferAdresse], ['Käufer', v.kaeufer], ['Adresse Käufer', v.kaeuferAdresse]])]
         .map(([l, x]) => `<div><dt>${l}</dt><dd>${esc(x) || '–'}</dd></div>`).join('')}
     </dl></div></section>
     ${isOwn(v) ? '' : `<section class="panel"><div class="phase">
@@ -1071,7 +1085,7 @@ function renderAkte(v) {
     ${repairsHTML(v)}
     <section class="panel"><div class="panel-h"><h2>Kosten &amp; Investitionen</h2><span class="sub">${k.length} Posten</span></div>
       ${k.length ? `<div class="scroll-x"><table><thead><tr><th>Datum</th><th>Posten</th><th>Kategorie</th><th class="r">Betrag</th><th></th></tr></thead><tbody>
-        ${k.map(x => `<tr><td>${fd(x.datum)}</td><td>${esc(x.text)}${byLine(x)}</td><td class="sub">${esc(x.kategorie)}</td><td class="r">${eur(x.betrag)}</td>
+        ${k.map(x => `<tr><td>${fd(x.datum)}</td><td>${esc(x.text)}${x.kalender && x.datum ? ' <span title="im Kalender" aria-label="im Kalender">📅</span>' : ''}${byLine(x)}</td><td class="sub">${esc(x.kategorie)}</td><td class="r">${eur(x.betrag)}</td>
           <td class="r"><button class="btn small ghost" data-act="edit-cost" data-id="${v.id}" data-cost="${x.id}" data-needs-write>Ändern</button></td></tr>`).join('')}
       </tbody><tfoot><tr><td colspan="3">Summe</td><td class="r">${eur(postenSum(v))}</td><td></td></tr></tfoot></table></div>`
       : `<div class="empty">Noch keine Kosten erfasst – Teile, Werkstatt, TÜV usw. hier eintragen.</div>`}
@@ -1350,7 +1364,7 @@ function renderPlan() {
   const repDates = v => reps(v).filter(r => r.datum && !r.entfallen).map(r => r.datum);
   const hidden = {sold: 0, own: 0};
   const rows = S.vehicles.filter(v => {
-    const any = inRange(v.kaufdatum) || inRange(v.reparaturStart, v.reparaturEnde) || inRange(v.aufbereitungStart, v.aufbereitungEnde) || inRange(v.verkaufStart, v.verkaufEnde) || inRange(v.verkaufsdatum) || inRange(huIso(v)) || repDates(v).some(d => inRange(d)) || tuevDates(v).some(d => inRange(d));
+    const any = inRange(v.kaufdatum) || inRange(v.reparaturStart, v.reparaturEnde) || inRange(v.aufbereitungStart, v.aufbereitungEnde) || inRange(v.verkaufStart, v.verkaufEnde) || inRange(v.verkaufsdatum) || inRange(huIso(v)) || repDates(v).some(d => inRange(d)) || calMarks(v).some(m => inRange(m.d));
     if (!any) return false;
     if (isOwn(v) && !showOwn) { hidden.own++; return false; }
     if (!isOwn(v) && v.status === 'verkauft' && !showSold) { hidden.sold++; return false; }
@@ -1390,10 +1404,10 @@ function renderPlan() {
         ${detail ? `<div class="g-weeks">${weeks.map(w => `<span style="left:${pct(w)}%">KW ${kw(w)}<small>${w.getDate()}.${w.getMonth() + 1}.</small></span>`).join('')}</div>` : ''}
         ${today}</div></div>
       ${rows.length ? rows.map(v => `<div class="g-row"><div class="g-label" data-open="${v.id}"><b>${esc(vName(v))}</b><span>${isOwn(v) ? 'Eigenes Fahrzeug' : (STATUS[v.status] || STATUS.geplant).label}</span></div>
-        <div class="g-track" data-open="${v.id}">${grid}${bar(v.reparaturStart, v.reparaturEnde, 'rep', 'Reparatur')}${bar(v.aufbereitungStart, v.aufbereitungEnde, 'auf', 'Aufbereitung')}${bar(v.verkaufStart, v.verkaufEnde, 'ver', 'Verkauf')}${mark(v.kaufdatum, 'kauf', 'Kauf')}${mark(v.verkaufsdatum, 'sold', 'Verkauft')}${mark(huIso(v), 'hu', 'HU/TÜV fällig')}${tuevDates(v).map(d => mark(d, 'hu', 'TÜV/HU-Termin')).join('')}${repDates(v).map(d => mark(d, 'rp', 'Reparatur erledigt')).join('')}${today}</div></div>`).join('')
+        <div class="g-track" data-open="${v.id}">${grid}${bar(v.reparaturStart, v.reparaturEnde, 'rep', 'Reparatur')}${bar(v.aufbereitungStart, v.aufbereitungEnde, 'auf', 'Aufbereitung')}${bar(v.verkaufStart, v.verkaufEnde, 'ver', 'Verkauf')}${mark(v.kaufdatum, 'kauf', 'Kauf')}${mark(v.verkaufsdatum, 'sold', 'Verkauft')}${mark(huIso(v), 'hu', 'HU/TÜV fällig')}${calMarks(v).sort((a, b) => a.d.localeCompare(b.d)).map((m, i) => mark(m.d, m.cls, m.l) + (detail && inRange(m.d) ? `<span class="mlabel${i % 2 ? ' low' : ''}" style="left:${pct(pd(m.d))}%">${esc(m.l)}</span>` : '')).join('')}${repDates(v).map(d => mark(d, 'rp', 'Reparatur erledigt')).join('')}${today}</div></div>`).join('')
       : `<div class="empty">In diesem Zeitraum ist nichts geplant. Trage bei einem Fahrzeug Kaufdatum, Reparatur- und Verkaufszeitraum ein.</div>`}
     </div></div>
-    <div class="legend"><span><i class="d" style="background:var(--text)"></i>Kauf</span><span><i style="background:var(--st-reparatur)"></i>Reparatur</span><span><i style="background:#13B5A6"></i>Aufbereitung</span><span><i style="background:var(--st-verkauf)"></i>Verkauf</span><span><i class="d" style="background:var(--st-verkauft)"></i>Verkauft</span><span><i class="d" style="background:var(--red)"></i>HU/TÜV</span><span><i class="d" style="background:var(--st-reparatur);border-radius:50%;transform:none"></i>Reparatur erledigt</span><span><i style="background:var(--red);width:2px"></i>Heute</span></div>
+    <div class="legend"><span><i class="d" style="background:var(--text)"></i>Kauf</span><span><i style="background:var(--st-reparatur)"></i>Reparatur</span><span><i style="background:#13B5A6"></i>Aufbereitung</span><span><i style="background:var(--st-verkauf)"></i>Verkauf</span><span><i class="d" style="background:var(--st-verkauft)"></i>Verkauft</span><span><i class="d" style="background:var(--red)"></i>HU/TÜV</span><span><i class="d" style="background:#E05FB0"></i>Termin aus Kosten</span><span><i class="d" style="background:var(--st-reparatur);border-radius:50%;transform:none"></i>Reparatur erledigt</span><span><i style="background:var(--red);width:2px"></i>Heute</span></div>
   </section>`;
   S.ganttScroll = {pos: tp, key: S.planZoom + S.ganttOffset, w: innerW, lw: labelW};
   const ev = events().filter(e => e.d >= todayISO()).slice(0, 12);
@@ -1581,6 +1595,7 @@ document.addEventListener('input', e => {
 
 function field(f, val) {
   if (f.t === 'range') return rangeField(f, val);
+  if (f.t === 'check') return `<label class="phase-chk full" style="margin-top:0"><input type="checkbox" name="${f.k}"${val ? ' checked' : ''}> ${f.l}</label>`;
   const id = 'f_' + f.k, cls = f.full ? ' class="full"' : '';
   const v = val ?? f.def ?? '';
   if (f.t === 'select') return `<label${cls} for="${id}">${f.l}<select id="${id}" name="${f.k}">${f.o.map(([k, l]) => `<option value="${esc(k)}" ${String(v) === String(k) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
@@ -1600,7 +1615,7 @@ function openForm({title, groups, data = {}, onSave, onDelete, extra = '', after
   form.onsubmit = ev => {
     ev.preventDefault();
     const out = {};
-    groups.forEach(g => g.f.forEach(f => { if (f.t === 'range') { out[f.from] = form.elements[f.from].value; out[f.to] = form.elements[f.to].value; return; } const el = form.elements[f.k]; let x = el.value.trim(); if (f.t === 'eur' || f.t === 'number' || f.t === 'dec') x = x === '' ? '' : num(x); out[f.k] = x; }));
+    groups.forEach(g => g.f.forEach(f => { if (f.t === 'range') { out[f.from] = form.elements[f.from].value; out[f.to] = form.elements[f.to].value; return; } if (f.t === 'check') { out[f.k] = form.elements[f.k].checked; return; } const el = form.elements[f.k]; let x = el.value.trim(); if (f.t === 'eur' || f.t === 'number' || f.t === 'dec') x = x === '' ? '' : num(x); out[f.k] = x; }));
     dlg.close(); onSave(out);
   };
   form.querySelectorAll('[data-close]').forEach(b => b.onclick = () => dlg.close());
@@ -1646,10 +1661,11 @@ const OWN_FORM = [
 ];
 function carForm(v, own) {
   own = v ? isOwn(v) : !!own;
-  openForm({title: v ? 'Fahrzeug bearbeiten' : own ? 'Eigenes Fahrzeug anlegen' : 'Fahrzeug anlegen', groups: own ? OWN_FORM : CAR_FORM, data: v || (own ? {} : {status:'geplant'}),
+  openForm({title: v ? 'Fahrzeug bearbeiten' : own ? 'Eigenes Fahrzeug anlegen' : 'Fahrzeug anlegen', groups: own ? OWN_FORM : CAR_FORM, data: v ? {...v, tuevTermin: tuevOf(v)} : (own ? {} : {status:'geplant'}),
     onSave: d => {
       if (!own && d.verkaufspreis && d.verkaufsdatum && d.status !== 'verkauft') d.status = 'verkauft';
       const obj = {...(v || {id: uid(), kosten: [], ...(own ? {art: 'eigen'} : {})}), ...d};
+      if (v && d.tuevTermin && d.tuevTermin !== (v.tuevTermin || '')) obj.kosten = (obj.kosten || []).map(k => isTuevCost(k) ? {...k, datum: d.tuevTermin} : k); // TÜV-Termin ↔ Kostenposten
       Store.save('vehicles', obj); toast(v ? 'Gespeichert' : 'Fahrzeugakte angelegt');
       if (!v) { if (own) S.filter = 'eigen'; go('fahrzeuge', obj.id); }
     },
@@ -1743,12 +1759,14 @@ function repForm(v, r, finish) {
 
 function costForm(v, c) {
   openForm({title: c ? 'Kosten ändern' : 'Kosten erfassen', data: c || {datum: todayISO(), kategorie: 'Teile'},
-    groups: [{f:[{k:'text', l:'Posten', req:true, full:true}, {k:'kategorie', l:'Kategorie', t:'select', o:COST_CATS.map(x => [x, x])}, {k:'betrag', l:'Betrag', t:'eur', req:true}, {k:'datum', l:'Datum', t:'date'}]}],
+    groups: [{f:[{k:'text', l:'Posten', req:true, full:true}, {k:'kategorie', l:'Kategorie', t:'select', o:COST_CATS.map(x => [x, x])}, {k:'betrag', l:'Betrag', t:'eur', req:true}, {k:'datum', l:'Datum', t:'date'}, {k:'kalender', l:'Datum im Kalender anzeigen (mit der Bezeichnung des Postens)', t:'check', full:true}]}],
     onSave: d => {
       v = S.vehicles.find(x => x.id === v.id) || v;
       const kosten = (v.kosten || []).filter(x => !c || x.id !== c.id);
       kosten.push({...(c || {id: uid()}), ...d});
-      Store.save('vehicles', {...v, kosten}); toast('Gespeichert');
+      const o = {...v, kosten};
+      if (d.datum && isTuevCost(d)) o.tuevTermin = d.datum; // TÜV/HU-Posten ↔ TÜV-Termin abgleichen
+      Store.save('vehicles', o); toast(d.datum && isTuevCost(d) ? 'Gespeichert – TÜV-Termin übernommen' : 'Gespeichert');
     },
     onDelete: c ? () => { v = S.vehicles.find(x => x.id === v.id) || v; Store.save('vehicles', {...v, kosten: (v.kosten || []).filter(x => x.id !== c.id)}); toast('Gelöscht'); } : null});
 }
