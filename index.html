@@ -1986,9 +1986,48 @@ document.addEventListener('click', e => {
   S.lbIndex = Math.max(0, list.findIndex(b => b.id === t.dataset.doc));
   drawLightbox(); const lb = $('#lb'); if (!lb.open) lb.showModal();
 });
+/* ---------- Vorlagen aus bisherigen Kosten (alle Fahrzeuge) ---------- */
+function costTemplates() {
+  const m = new Map();
+  for (const v of S.vehicles) for (const k of (v.kosten || [])) {
+    const name = String(k.text || '').trim(); if (!name) continue;
+    const key = name.toLowerCase() + '|' + (k.kategorie || '');
+    const when = k.datum || k.byAt || '';
+    const cur = m.get(key);
+    if (!cur) m.set(key, {text: name, kategorie: k.kategorie || '', betrag: k.betrag, kalender: !!k.kalender, n: 1, when});
+    else { cur.n++; if (when >= cur.when) Object.assign(cur, {text: name, betrag: k.betrag, kalender: !!k.kalender, when}); }
+  }
+  return [...m.values()].sort((a, b) => b.n - a.n || String(b.when).localeCompare(String(a.when))).slice(0, 60);
+}
+function costTplHTML() {
+  const t = costTemplates(); if (!t.length) return '';
+  costTplHTML.list = t;
+  return `<label>Vorlage aus bisherigen Kosten (auch anderer Fahrzeuge)<select id="costtpl"><option value="">– ohne Vorlage –</option>${t.map((x, i) => `<option value="${i}">${esc(x.text)}${x.kategorie ? ' · ' + esc(x.kategorie) : ''}${has(x.betrag) ? ' · ' + eur(x.betrag) : ''}${x.n > 1 ? ' (' + x.n + '×)' : ''}</option>`).join('')}</select></label>
+    <datalist id="costnames">${t.map(x => `<option value="${esc(x.text)}">`).join('')}</datalist>`;
+}
+function bindCostTpl() {
+  const sel = $('#costtpl'); if (!sel) return;
+  const fill = x => {
+    const f = $('#dlgform');
+    f.elements.text.value = x.text;
+    if (x.kategorie && [...f.elements.kategorie.options].some(o => o.value === x.kategorie)) f.elements.kategorie.value = x.kategorie;
+    f.elements.betrag.value = has(x.betrag) ? x.betrag : '';
+    if (f.elements.kalender) f.elements.kalender.checked = !!x.kalender;
+  };
+  sel.onchange = () => { const x = (costTplHTML.list || [])[+sel.value]; if (sel.value !== '' && x) { fill(x); toast('Vorlage übernommen – alles bleibt änderbar'); } };
+  // Tippen eines bekannten Postens schlägt Kategorie und Betrag vor (nur solange diese noch leer bzw. unverändert sind)
+  const f = $('#dlgform'), ti = f.elements.text, be = f.elements.betrag; let beTouched = false;
+  be.addEventListener('input', () => { beTouched = true; });
+  ti.addEventListener('change', () => {
+    const x = (costTplHTML.list || []).find(t => t.text.toLowerCase() === ti.value.trim().toLowerCase()); if (!x) return;
+    if (x.kategorie && [...f.elements.kategorie.options].some(o => o.value === x.kategorie)) f.elements.kategorie.value = x.kategorie;
+    if (!beTouched && has(x.betrag)) be.value = x.betrag;
+  });
+}
+
 function costForm(v, c) {
-  openForm({title: c ? 'Kosten ändern' : 'Kosten erfassen', data: c ? {...c, zahlung: c.offen ? 'offen' : 'bezahlt'} : {datum: todayISO(), kategorie: 'Teile', zahlung: 'bezahlt'}, after: belegeEditor(c ? c.belege : []),
-    groups: [{f:[{k:'text', l:'Posten', req:true, full:true}, {k:'kategorie', l:'Kategorie', t:'select', o:COST_CATS.map(x => [x, x])}, {k:'betrag', l:'Betrag', t:'eur', req:true}, {k:'datum', l:'Datum', t:'date'}, {k:'zahlung', l:'Zahlung', t:'select', o:[['bezahlt', 'Bezahlt'], ['offen', 'Offen / erwartet']]}, {k:'kalender', l:'Datum im Kalender anzeigen (mit der Bezeichnung des Postens)', t:'check', full:true}]}],
+  openForm({title: c ? 'Kosten ändern' : 'Kosten erfassen', extra: c ? '' : costTplHTML(), data: c ? {...c, zahlung: c.offen ? 'offen' : 'bezahlt'} : {datum: todayISO(), kategorie: 'Teile', zahlung: 'bezahlt'}, after: belegeEditor(c ? c.belege : []),
+    groups: [{f:[{k:'text', l:'Posten', req:true, full:true, list:'costnames'}, {k:'kategorie', l:'Kategorie', t:'select', o:COST_CATS.map(x => [x, x])}, {k:'betrag', l:'Betrag', t:'eur', req:true}, {k:'datum', l:'Datum', t:'date'}, {k:'zahlung', l:'Zahlung', t:'select', o:[['bezahlt', 'Bezahlt'], ['offen', 'Offen / erwartet']]}, {k:'kalender', l:'Datum im Kalender anzeigen (mit der Bezeichnung des Postens)', t:'check', full:true}]}],
     onSave: d => {
       const files = [...(($('#belegfiles') || {})._acc || [])];
       const removed = [...document.querySelectorAll('#beleglist .beleg.removed')].map(x => x.dataset.bid);
@@ -2006,6 +2045,7 @@ function costForm(v, c) {
     },
     onDelete: c ? () => { v = S.vehicles.find(x => x.id === v.id) || v; Store.save('vehicles', {...v, kosten: (v.kosten || []).filter(x => x.id !== c.id)}); if (S.assets) (c.belege || []).forEach(b => S.assets.delete(b.id).catch(() => {})); toast('Gelöscht'); } : null});
   bindBelegEditor();
+  if (!c) bindCostTpl();
   // Vorschlag: Datum in der Zukunft → „offen“, bis man es selbst ändert
   const fd0 = $('#f_datum'), fz = $('#f_zahlung'); let touched = !!c;
   if (fz) fz.addEventListener('change', () => { touched = true; });
